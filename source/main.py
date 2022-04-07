@@ -22,8 +22,9 @@ class Bot:
 
 
 async def main():
+    bot = Bot()
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{server_url}bot{bot_token}/getUpdates') as request:
+        async with session.get(f'{await bot.server_url}bot{await bot.bot_token}/getUpdates') as request:
             json_answer = await request.json()
             print(json_answer)
 
