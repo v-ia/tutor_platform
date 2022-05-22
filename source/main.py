@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import logging
 import configparser
@@ -5,14 +6,11 @@ import asyncio
 import aiohttp
 import asyncpg
 from aiohttp import web
-
-CONFIG_PATH = Path.cwd().parent
-CONFIG_NAME = 'config.ini'
-SUPPORTED_UPDATE_TYPES = ('message', 'callback_query')
+import ast
 
 
 class Database:
-    def __init__(self, config: object):
+    def __init__(self, config: configparser.ConfigParser):
         self.__connection = None
         self.__auth_data = {'host': config.get('Database', 'host'),
                             'port': config.get('Database', 'port'),
@@ -55,44 +53,95 @@ class Database:
 
 
 class Bot:
-    def __init__(self, config: object, database: Database):
-        self.__bot_token = config.get('Telegram', 'bot_token')
-        self.__server_url = config.get('Telegram', 'server_url')
-        self.__database = database
+    def __init__(self, config: configparser.ConfigParser, database: Database):
+        self.bot_token = config.get('Bot', 'bot_token')
+        self.server_url = config.get('Bot', 'server_url')
+        # self.supported_commands = ast.literal_eval(config.get('Bot', 'supported_commands'))
+        self.supported_commands = config.get('Bot', 'supported_commands')
+        self.database = database
+
+    @property
+    async def supported_commands(self) -> str:
+        if self.__supported_commands is None:
+            raise KeyError('Supported_commands are empty. Problem with config file')
+        else:
+            return self.__supported_commands
+
+    @supported_commands.setter
+    def supported_commands(self, commands: list):
+        if commands:
+            self.__supported_commands = commands
+        else:
+            raise KeyError('Supported_commands are empty. Problem with config file')
 
     @property
     async def bot_token(self) -> str:
-        if self.__bot_token is None:
-            raise KeyError('Bot_token is empty. Problem with config file')
+        return self.__bot_token
+
+    @bot_token.setter
+    def bot_token(self, token: str):
+        if token:
+            self.__bot_token = token
         else:
-            return self.__bot_token
+            raise KeyError('Bot_token is empty. Problem with config file')
 
     @property
     async def server_url(self) -> str:
-        if self.__server_url is None:
-            raise KeyError('Server_url is empty. Problem with config file')
+        return self.__server_url
+
+    @server_url.setter
+    def server_url(self, url: str):
+        if url:
+            self.__server_url = url
         else:
-            return self.__server_url
+            raise KeyError('Server_url is empty. Problem with config file')
+
+
+class Controller:
+    def __init__(self, config: configparser.ConfigParser):
+        self.database = Database(config)
+        self.bot = Bot(config, self.database)
 
     @staticmethod
-    async def parser(json_update: dict) -> dict:
+    async def parser(json_update: dict) -> dict :
+        update_type = list(json_update)[1]  # message or callback_query
+        message_type = list(json_update[update_type])[4]  # photo, document, text, data and so on
+
         data = {'update_id': json_update['update_id'],
-                'user_id': json_update[list(json_update)[1]]['from']['id'],
-                'command': json_update[list(json_update)[1]][list(json_update[list(json_update)[1]])[4]]
+                'user_id': json_update[update_type]['from']['id']
                 }
+
+        if update_type == 'callback_query':
+            data = {'command': json_update['callback_query']['data']}
+        elif update_type == 'message':
+            if message_type == 'text':
+                text = json_update['message']['text']
+                if any(command in text for command in ()):
+                    pass
+            elif message_type == 'document':
+                pass
+            else:
+                pass
+        print(update_type)
+        print(message_type)
         return data
 
     async def request_handler(self, request):
         json_update = await request.json()
-        update_type = list(json_update)[1]
-        if update_type in SUPPORTED_UPDATE_TYPES:
-            data = await self.parser(json_update)
-            return web.json_response(data)
+        data = await self.parser(json_update)
+        return web.json_response()  # 200 (OK) response
 
-        # async with aiohttp.ClientSession() as session:
-        #     async with session.get(f'{await self.server_url}bot{await self.bot_token}/getUpdates') as request:
-        #         json_answer = await request.json()
-        #         print(json_answer)
+# async def main():
+#     config = configparser.ConfigParser()
+#     config.read(CONFIG_PATH / CONFIG_NAME)
+#
+#     postgres_db = Database(config)
+#
+#     bot = Bot(config, postgres_db)
+#     async with aiohttp.ClientSession() as session:
+#         async with session.get(f'{await bot.server_url}bot{await bot.bot_token}/getUpdates') as request:
+#             json_answer = await request.json()
+#             print(json_answer)
         #         sender, text = await self.parser(await request.json())
         #         answer = {
         #             'chat_id': sender,
@@ -124,14 +173,14 @@ class Bot:
 
 
 if __name__ == '__main__':
+    config = CustomConfigParser()
+    config.read(Path.cwd().parent / 'config.ini')   # path_to_config_file / config_name
 
-    config = configparser.ConfigParser()
-    config.read(CONFIG_PATH / CONFIG_NAME)
-
-    postgres_db = Database(config)
-
-    bot = Bot(config, postgres_db)
+    controller = Controller(config)
 
     app = web.Application()
-    app.add_routes([web.post(f'/', bot.request_handler)])
+    app.add_routes([web.post(f'/', controller.request_handler)])
     web.run_app(app)
+
+# if __name__ == '__main__':
+#     asyncio.run(main())
