@@ -7,6 +7,23 @@ import aiohttp
 import asyncpg
 from aiohttp import web
 import ast
+import re
+
+
+def empty_values_check(func):
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if not result:
+            raise KeyError('Problem when reading config file. Some values are empty')
+        else:
+            return result
+    return wrapper
+
+
+class CustomConfigParser(configparser.ConfigParser):
+    @empty_values_check
+    def get(self, *args, **kwargs):
+        return super().get(*args, **kwargs)
 
 
 class Database:
@@ -21,14 +38,14 @@ class Database:
 
     @property
     async def auth_data(self) -> dict:
-        if None in self.__auth_data:
-            raise KeyError('Some values for database connection are empty. Problem with config file')
-        else:
-            return self.__auth_data
+        return self.__auth_data
 
     @property
     async def connection(self) -> object:
-        return self.__connection
+        if self.connection is not None:
+            return self.__connection
+        else:
+            raise ConnectionError('Connection to database is not established')
 
     @connection.setter
     async def connection(self, new_connection: object):
@@ -54,47 +71,22 @@ class Database:
 
 class Bot:
     def __init__(self, config: configparser.ConfigParser, database: Database):
-        self.bot_token = config.get('Bot', 'bot_token')
-        self.server_url = config.get('Bot', 'server_url')
-        # self.supported_commands = ast.literal_eval(config.get('Bot', 'supported_commands'))
-        self.supported_commands = config.get('Bot', 'supported_commands')
+        self.__bot_token = config.get('Bot', 'bot_token')
+        self.__server_url = config.get('Bot', 'server_url')
+        self.__supported_commands = ast.literal_eval(config.get('Bot', 'supported_commands'))
         self.database = database
 
     @property
     async def supported_commands(self) -> str:
-        if self.__supported_commands is None:
-            raise KeyError('Supported_commands are empty. Problem with config file')
-        else:
-            return self.__supported_commands
-
-    @supported_commands.setter
-    def supported_commands(self, commands: list):
-        if commands:
-            self.__supported_commands = commands
-        else:
-            raise KeyError('Supported_commands are empty. Problem with config file')
+        return self.__supported_commands
 
     @property
     async def bot_token(self) -> str:
         return self.__bot_token
 
-    @bot_token.setter
-    def bot_token(self, token: str):
-        if token:
-            self.__bot_token = token
-        else:
-            raise KeyError('Bot_token is empty. Problem with config file')
-
     @property
     async def server_url(self) -> str:
         return self.__server_url
-
-    @server_url.setter
-    def server_url(self, url: str):
-        if url:
-            self.__server_url = url
-        else:
-            raise KeyError('Server_url is empty. Problem with config file')
 
 
 class Controller:
@@ -103,27 +95,35 @@ class Controller:
         self.bot = Bot(config, self.database)
 
     @staticmethod
-    async def parser(json_update: dict) -> dict :
+    async def parser(json_update: dict) -> dict:
         update_type = list(json_update)[1]  # message or callback_query
         message_type = list(json_update[update_type])[4]  # photo, document, text, data and so on
-
         data = {'update_id': json_update['update_id'],
-                'user_id': json_update[update_type]['from']['id']
-                }
-
+                'user_id': json_update[update_type]['from']['id']}
         if update_type == 'callback_query':
-            data = {'command': json_update['callback_query']['data']}
+            data['type'] = 'command'
+            data['value'] = json_update['callback_query']['data']
         elif update_type == 'message':
             if message_type == 'text':
                 text = json_update['message']['text']
-                if any(command in text for command in ()):
-                    pass
+                command = re.findall('/[a-z]+', text)
+                if len(command) == 0:
+                    data['type'] = 'text'
+                    data['value'] = text
+                else:
+                    data['type'] = 'command'
+                    data['value'] = command[0]
             elif message_type == 'document':
-                pass
-            else:
-                pass
-        print(update_type)
-        print(message_type)
+                data['type'] = 'document'
+                data['value'] = json_update['message']['document']['file_id']
+            elif message_type == 'audio':
+                data['type'] = 'audio'
+                data['value'] = json_update['message']['audio']['file_id']
+            elif message_type == 'photo':
+                data['type'] = 'photo'
+                data['value'] = json_update['message']['photo'][-1]['file_id']
+            if 'caption' in json_update['message'].keys():
+                data['caption'] = json_update['message']['caption']
         return data
 
     async def request_handler(self, request):
