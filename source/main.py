@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 import logging
 import configparser
@@ -70,15 +69,16 @@ class Database:
 
 
 class Bot:
-    def __init__(self, config: configparser.ConfigParser, database: Database):
-        self.__bot_token = config.get('Bot', 'bot_token')
-        self.__server_url = config.get('Bot', 'server_url')
-        self.__supported_commands = ast.literal_eval(config.get('Bot', 'supported_commands'))
+    def __init__(self, database: Database):
         self.database = database
 
-    @property
-    async def supported_commands(self) -> str:
-        return self.__supported_commands
+
+class ViewBot:
+    def __init__(self, config: configparser.ConfigParser):
+        self.__bot_token = config.get('Bot', 'bot_token')
+        self.__server_url = config.get('Bot', 'server_url')
+        self.__request_attempts = config.get('Bot', 'request_attempts')
+        self.__supported_commands = ast.literal_eval(config.get('Bot', 'supported_commands'))
 
     @property
     async def bot_token(self) -> str:
@@ -88,37 +88,61 @@ class Bot:
     async def server_url(self) -> str:
         return self.__server_url
 
+    @property
+    async def request_attempts(self) -> str:
+        return self.__request_attempts
+
+    @property
+    async def supported_commands(self) -> str:
+        return self.__supported_commands
+
+    async def send_method(self, data_type: str, data: dict, method: str, reply_markup: dict = None):
+        data_to_send = {'chat_id': data['user_id'],
+                        data_type: data['value']
+                        }
+        if 'caption' in data.keys():
+            data_to_send['caption'] = data['caption']
+        if reply_markup:
+            data_to_send['reply_markup'] = reply_markup
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(await self.request_attempts):
+                await asyncio.sleep(1 * attempt)
+                async with session.post(f'{await self.server_url}bot{await self.bot_token}/{method}',
+                                        json=data_to_send
+                                        ) as request:
+                    json_answer = await request.json()
+                    if request.status == 200:
+                        return json_answer['ok']
+
 
 class Controller:
     def __init__(self, config: configparser.ConfigParser):
         self.database = Database(config)
-        self.bot = Bot(config, self.database)
+        self.bot = Bot(self.database)
+        self.view = ViewBot(config)
 
-    @staticmethod
-    async def parser(json_update: dict) -> dict:
+    async def parser_of_update(self, json_update: dict) -> dict:
         update_type = list(json_update)[1]  # message or callback_query
         message_type = list(json_update[update_type])[4]  # photo, document, text, data and so on
         data = {'update_id': json_update['update_id'],
-                'user_id': json_update[update_type]['from']['id']}
+                'user_id': json_update[update_type]['from']['id'],
+                'is_bot': json_update[update_type]['from']['is_bot']}
         if update_type == 'callback_query':
             data['type'] = 'command'
             data['value'] = json_update['callback_query']['data']
         elif update_type == 'message':
             if message_type == 'text':
                 text = json_update['message']['text']
-                command = re.findall('/[a-z]+', text)
+                command = list(set(re.findall('/[a-z]+', text)) & set(await self.view.supported_commands))
                 if len(command) == 0:
                     data['type'] = 'text'
                     data['value'] = text
                 else:
                     data['type'] = 'command'
                     data['value'] = command[0]
-            elif message_type == 'document':
-                data['type'] = 'document'
-                data['value'] = json_update['message']['document']['file_id']
-            elif message_type == 'audio':
-                data['type'] = 'audio'
-                data['value'] = json_update['message']['audio']['file_id']
+            elif message_type == 'document' or message_type == 'audio' or message_type == 'video':
+                data['type'] = message_type
+                data['value'] = json_update['message'][message_type]['file_id']
             elif message_type == 'photo':
                 data['type'] = 'photo'
                 data['value'] = json_update['message']['photo'][-1]['file_id']
@@ -126,14 +150,15 @@ class Controller:
                 data['caption'] = json_update['message']['caption']
         return data
 
-    async def request_handler(self, request):
+    async def update_handler(self, request):
         json_update = await request.json()
-        data = await self.parser(json_update)
+        data = await self.parser_of_update(json_update)
         return web.json_response()  # 200 (OK) response
 
+
 # async def main():
-#     config = configparser.ConfigParser()
-#     config.read(CONFIG_PATH / CONFIG_NAME)
+#     config = CustomConfigParser()
+#     config.read(Path.cwd().parent / 'config.ini')   # path_to_config_file / config_name
 #
 #     postgres_db = Database(config)
 #
@@ -179,7 +204,7 @@ if __name__ == '__main__':
     controller = Controller(config)
 
     app = web.Application()
-    app.add_routes([web.post(f'/', controller.request_handler)])
+    app.add_routes([web.post(f'/', controller.update_handler)])
     web.run_app(app)
 
 # if __name__ == '__main__':
