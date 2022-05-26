@@ -27,45 +27,44 @@ class CustomConfigParser(configparser.ConfigParser):
 
 class Database:
     def __init__(self, config: configparser.ConfigParser):
-        self.__connection = None
         self.__auth_data = {'host': config.get('Database', 'host'),
                             'port': config.get('Database', 'port'),
                             'user': config.get('Database', 'user'),
                             'password': config.get('Database', 'password'),
                             'database': config.get('Database', 'database')
                             }
+        self.__pool = None
 
     @property
-    async def auth_data(self) -> dict:
+    def auth_data(self) -> dict:
         return self.__auth_data
 
     @property
-    async def connection(self) -> object:
-        if self.connection is not None:
-            return self.__connection
+    def pool(self) -> object:
+        return self.__pool
+
+    @pool.setter
+    def pool(self, pool: object):
+        if not self.__pool:
+            self.__pool = pool
         else:
-            raise ConnectionError('Connection to database is not established')
+            raise ValueError('Pool is already set')
 
-    @connection.setter
-    async def connection(self, new_connection: object):
-        if self.connection is None:
-            self.__connection = new_connection
-
-    async def connect(self):
+    async def execute_query(self):
         try:
-            self.connection = await asyncpg.connect(host=await self.auth_data['host'],
-                                                    port=await self.auth_data['port'],
-                                                    user=await self.auth_data['user'],
-                                                    password=await self.auth_data['password'],
-                                                    database=await self.auth_data['database']
-                                                    )
+            self.pool = await asyncpg.create_pool(host=self.auth_data['host'],
+                                                  port=self.auth_data['port'],
+                                                  user=self.auth_data['user'],
+                                                  password=self.auth_data['password'],
+                                                  database=self.auth_data['database']
+                                                  )
         except ConnectionError:
-            print('Can\'t connect to database')
-        finally:
-            await self.disconnect()
+            print('Can\'t create connection\'s pool for database')
 
-    async def disconnect(self):
-        self.connection.close()
+        async with self.pool.acquire() as connection:
+            async with connection.transaction():
+                result = await connection.fetchval('select 2 * 5')
+                print(result)
 
 
 class Bot:
@@ -78,25 +77,20 @@ class ViewBot:
         self.__bot_token = config.get('Bot', 'bot_token')
         self.__server_url = config.get('Bot', 'server_url')
         self.__request_attempts = config.get('Bot', 'request_attempts')
-        self.__supported_commands = ast.literal_eval(config.get('Bot', 'supported_commands'))
 
     @property
-    async def bot_token(self) -> str:
+    def bot_token(self) -> str:
         return self.__bot_token
 
     @property
-    async def server_url(self) -> str:
+    def server_url(self) -> str:
         return self.__server_url
 
     @property
-    async def request_attempts(self) -> str:
+    def request_attempts(self) -> str:
         return self.__request_attempts
 
-    @property
-    async def supported_commands(self) -> str:
-        return self.__supported_commands
-
-    async def send_method(self, data_type: str, data: dict, method: str, reply_markup: dict = None):
+    async def send_method(self, data_type: str, method: str, data: dict, reply_markup: dict = None):
         data_to_send = {'chat_id': data['user_id'],
                         data_type: data['value']
                         }
@@ -105,9 +99,9 @@ class ViewBot:
         if reply_markup:
             data_to_send['reply_markup'] = reply_markup
         async with aiohttp.ClientSession() as session:
-            for attempt in range(await self.request_attempts):
+            for attempt in range(self.request_attempts):
                 await asyncio.sleep(1 * attempt)
-                async with session.post(f'{await self.server_url}bot{await self.bot_token}/{method}',
+                async with session.post(f'{self.server_url}bot{self.bot_token}/{method}',
                                         json=data_to_send
                                         ) as request:
                     json_answer = await request.json()
@@ -120,6 +114,11 @@ class Controller:
         self.database = Database(config)
         self.bot = Bot(self.database)
         self.view = ViewBot(config)
+        self.__supported_commands = ast.literal_eval(config.get('Bot', 'supported_commands'))
+
+    @property
+    def supported_commands(self) -> str:
+        return self.__supported_commands
 
     async def parser_of_update(self, json_update: dict) -> dict:
         update_type = list(json_update)[1]  # message or callback_query
@@ -133,7 +132,7 @@ class Controller:
         elif update_type == 'message':
             if message_type == 'text':
                 text = json_update['message']['text']
-                command = list(set(re.findall('/[a-z]+', text)) & set(await self.view.supported_commands))
+                command = list(set(re.findall('/[a-z]+', text)) & set(self.supported_commands))
                 if len(command) == 0:
                     data['type'] = 'text'
                     data['value'] = text
@@ -153,6 +152,8 @@ class Controller:
     async def update_handler(self, request):
         json_update = await request.json()
         data = await self.parser_of_update(json_update)
+        if not data['is_bot']:
+            await self.database.execute_query()
         return web.json_response()  # 200 (OK) response
 
 
