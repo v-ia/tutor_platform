@@ -5,7 +5,9 @@ import asyncio
 import aiohttp
 import asyncpg
 from aiohttp import web
+import ast
 import re
+from abc import ABC, abstractmethod
 
 
 def empty_values_check(func):
@@ -25,18 +27,12 @@ class CustomConfigParser(configparser.ConfigParser):
 
 
 class Database:
-    def __init__(self, config: configparser.ConfigParser):
-        self.__auth_data = {'host': config.get('Database', 'host'),
-                            'port': config.get('Database', 'port'),
-                            'user': config.get('Database', 'user'),
-                            'password': config.get('Database', 'password'),
-                            'database': config.get('Database', 'database')
-                            }
-        self.__pool = None
-
-    @property
-    def auth_data(self) -> dict:
-        return self.__auth_data
+    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.database = database
 
     @property
     def pool(self) -> object:
@@ -49,11 +45,11 @@ class Database:
 
     async def create_pool(self):
         try:
-            self.pool = await asyncpg.create_pool(host=self.auth_data['host'],
-                                                  port=self.auth_data['port'],
-                                                  user=self.auth_data['user'],
-                                                  password=self.auth_data['password'],
-                                                  database=self.auth_data['database']
+            self.pool = await asyncpg.create_pool(host=self.host,
+                                                  port=self.port,
+                                                  user=self.user,
+                                                  password=self.password,
+                                                  database=self.database
                                                   )
         except ConnectionError:
             print('Can\'t create connection\'s pool for database')
@@ -182,53 +178,171 @@ class ViewBot:
         await self._send_method('text', 'sendMessage', data)
 
 
-class Controller:
-    def __init__(self, config: configparser.ConfigParser):
-        self.database = Database(config)
-        self.model = Model(self.database)
-        self.view = ViewBot(config)
-        self.commands_handlers = {'/start': self.view.start,
-                                  '/register': self.register,
-                                  '/register_scratch': self,
-                                  '/alter_user_data': self.view.alter_user_data,
-                                  '/navigation': self.navigation
-                                  }
+class User:
+    def __init__(self,
+                 chat_id: int,
+                 is_bot: bool,
+                 phone: str = None,
+                 name: str = None,
+                 surname: str = None,
+                 role: str = None,
+                 current_client: bool = None,
+                 current_command: str = None,
+                 user_id: str = None):
+        
+        self.chat_id = chat_id
+        self.is_bot = is_bot
+        self.phone = phone
+        self.name = name
+        self.surname = surname
+        self.role = role
+        self.current_client = current_client
+        self.current_command = current_command
+        self.user_id = user_id
 
-    async def _parser_of_update(self, json_update: dict) -> dict:
+    def __repr__(self):
+        return f'User(' \
+               f'{self.chat_id}, ' \
+               f'{self.is_bot}, ' \
+               f'{self.phone}, ' \
+               f'{self.name}, ' \
+               f'{self.surname}, ' \
+               f'{self.role}, ' \
+               f'{self.current_client}, ' \
+               f'{self.current_command}, ' \
+               f'{self.user_id})'
+
+
+class Data(ABC):
+    def __init__(self, value: str):
+        self.value = value
+
+
+class Command(Data):
+    def __init__(self, command: str):
+        super().__init__(command)
+
+    def __repr__(self):
+        return f'Command({self.value})'
+
+
+class Text(Data):
+    def __init__(self, text: str) :
+        super().__init__(text)
+
+    def __repr__(self):
+        return f'Text({self.value})'
+
+
+class Audio(Data):
+    def __init__(self, audio_id: str, caption: str = None):
+        super().__init__(audio_id)
+        self.caption = caption
+
+    def __repr__(self):
+        return f'Audio({self.value}, {self.caption})'
+
+
+class Video:
+    def __init__(self, video_id: str, caption: str = None):
+        super().__init__(video_id)
+        self.caption = caption
+
+    def __repr__(self):
+        return f'Video({self.value}, {self.caption})'
+
+
+class Document:
+    def __init__(self, document_id: str, caption: str = None):
+        super().__init__(document_id)
+        self.caption = caption
+
+    def __repr__(self):
+        return f'Document({self.value}, {self.caption})'
+
+
+class Photo:
+    def __init__(self, photo_id: str, caption: str = None):
+        super().__init__(photo_id)
+        self.caption = caption
+
+    def __repr__(self):
+        return f'Photo({self.value}, {self.caption})'
+
+
+class Update:
+    async def _get_data(self, json_update: dict) -> Data:
+        pass
+
+    @classmethod
+    async def create(cls, json_update: dict):
+        self = Update()
+        self.update_id = json_update['update_id']
         update_type = list(json_update)[1]  # message or callback_query
-        message_type = list(json_update[update_type])[4]  # photo, document, text, data and so on
-        data = {'update_id': json_update['update_id'],
-                'chat_id': json_update[update_type]['from']['id'],
-                'is_bot': json_update[update_type]['from']['is_bot']}
-        if update_type == 'callback_query':
-            data['type'] = 'command'
-            data['value'] = json_update['callback_query']['data']
-        elif update_type == 'message':
-            if message_type == 'text':
-                text = json_update['message']['text']
-                command = list(set(re.findall('/[a-z]+', text)) & set(self.commands_handlers.keys()))
-                if len(command) == 0:
-                    data['type'] = 'text'
-                    data['value'] = text
+        if update_type in ['message', 'audio', 'video', 'photo', 'document', 'text', 'callback_query', 'data']:
+            message_type = list(json_update[update_type])[4]  # photo, document, text, data and so on
+            if update_type == 'callback_query' and message_type == 'data' :
+                self.data = Command(json_update['callback_query']['data'])
+            elif update_type == 'message':
+                if message_type == 'text':
+                    command = list(set(re.findall('/[a-z]+', json_update['message']['text'])) &
+                                   set({'/start': 123}))
+                    if len(command) == 0 :
+                        self.data = Text(text=json_update['message']['text'])
+                    else :
+                        self.data = Command(command=command[0])
+                elif message_type == 'document' :
+                    self.data = Document(document_id=json_update['message']['document']['file_id'],
+                                    caption=json_update['message'].get('caption'))
+                elif message_type == 'audio' :
+                    self.data = Audio(audio_id=json_update['message']['audio']['file_id'],
+                                 caption=json_update['message'].get('caption'))
+                elif message_type == 'video' :
+                    self.data = Video(video_id=json_update['message']['video']['file_id'],
+                                 caption=json_update['message'].get('caption'))
+                elif message_type == 'photo':
+                    self.data = Photo(photo_id=json_update['message']['photo'][-1]['file_id'],
+                                 caption=json_update['message'].get('caption'))
                 else:
-                    data['type'] = 'command'
-                    data['value'] = command[0]
-            elif message_type == 'document' or message_type == 'audio' or message_type == 'video':
-                data['type'] = message_type
-                data['value'] = json_update['message'][message_type]['file_id']
-            elif message_type == 'photo':
-                data['type'] = 'photo'
-                data['value'] = json_update['message']['photo'][-1]['file_id']
-            if 'caption' in json_update['message'].keys():
-                data['caption'] = json_update['message']['caption']
-        return data
+                    return None
+            else:
+                return None
+            self.user = User(chat_id=json_update[update_type]['from']['id'],
+                             is_bot=json_update[update_type]['from']['is_bot'])
+            return self
+        else:
+            return None
 
-    async def update_handler(self, request):
-        json_update = await request.json()
-        data = await self._parser_of_update(json_update)
-        if not data['is_bot']:
-            if data['type'] == 'command':
-                await self.commands_handlers[data['value']](data)
+    async def parse_update(self, json_update: dict):
+        pass
+
+    def __repr__(self):
+        return f'Update({self.update_id}, {self.data}, {self.user})'
+
+
+class Controller:
+    def __init__(self, config: CustomConfigParser):
+        self.config = config
+        self.__supported_update_types = ast.literal_eval(config.get('Bot', 'supported_update_types'))
+        self.handle_command = {'/start': 123
+                               # '/register': self.register,
+                               # '/register_scratch': self,
+                               # '/alter_user_data': self.view.alter_user_data,
+                               # '/navigation': self.navigation
+                               }
+
+    @property
+    def supported_update_types(self) -> str:
+        return self.__supported_update_types
+
+    async def handle_update(self, request: object):
+        update = await Update.create(await request.json())
+        print(update)
+        # if await update:
+        #     if not await update.user.is_bot:
+        #         print(await update)
+                # if isinstance(update.data, Command):
+                #     await self.handle_command[update.data.value](update)
         return web.json_response()  # 200 (OK) response
 
     async def register(self, data: dict):
@@ -250,6 +364,7 @@ class Controller:
                 await self.register(data)
         else:
             await self.view.start(data)
+
 # async def main():
 #     config = CustomConfigParser()
 #     config.read(Path.cwd().parent / 'config.ini')   # path_to_config_file / config_name
@@ -290,15 +405,23 @@ class Controller:
                 #     json_answer = await request.json()
                 #     print(json_answer)
 
+# async def main():
+#     pass
+
 
 if __name__ == '__main__':
     config = CustomConfigParser()
-    config.read(Path.cwd().parent / 'config.ini')   # path_to_config_file / config_name
-
+    config.read(Path.cwd().parent / 'config.ini')  # path_to_config_file / config_name
+    database = Database(config.get('Database', 'host'),
+                         config.get('Database', 'port'),
+                         config.get('Database', 'user'),
+                         config.get('Database', 'password'),
+                         config.get('Database', 'database')
+                        )
     controller = Controller(config)
-
     app = web.Application()
-    app.add_routes([web.post(f'/', controller.update_handler)])
+
+    app.add_routes([web.post(f'/', controller.handle_update)])
     web.run_app(app)
 
 # if __name__ == '__main__':
