@@ -243,7 +243,7 @@ class Audio(Data):
         return f'Audio({self.value}, {self.caption})'
 
 
-class Video:
+class Video(Data):
     def __init__(self, video_id: str, caption: str = None):
         super().__init__(video_id)
         self.caption = caption
@@ -252,7 +252,7 @@ class Video:
         return f'Video({self.value}, {self.caption})'
 
 
-class Document:
+class Document(Data):
     def __init__(self, document_id: str, caption: str = None):
         super().__init__(document_id)
         self.caption = caption
@@ -261,7 +261,7 @@ class Document:
         return f'Document({self.value}, {self.caption})'
 
 
-class Photo:
+class Photo(Data):
     def __init__(self, photo_id: str, caption: str = None):
         super().__init__(photo_id)
         self.caption = caption
@@ -270,54 +270,61 @@ class Photo:
         return f'Photo({self.value}, {self.caption})'
 
 
-class Update:
-    async def _get_data(self, json_update: dict) -> Data:
-        pass
-
-    @classmethod
-    async def create(cls, json_update: dict):
-        self = Update()
-        self.update_id = json_update['update_id']
-        update_type = list(json_update)[1]  # message or callback_query
-        if update_type in ['message', 'audio', 'video', 'photo', 'document', 'text', 'callback_query', 'data']:
-            message_type = list(json_update[update_type])[4]  # photo, document, text, data and so on
-            if update_type == 'callback_query' and message_type == 'data' :
-                self.data = Command(json_update['callback_query']['data'])
-            elif update_type == 'message':
-                if message_type == 'text':
-                    command = list(set(re.findall('/[a-z]+', json_update['message']['text'])) &
-                                   set({'/start': 123}))
-                    if len(command) == 0 :
-                        self.data = Text(text=json_update['message']['text'])
-                    else :
-                        self.data = Command(command=command[0])
-                elif message_type == 'document' :
-                    self.data = Document(document_id=json_update['message']['document']['file_id'],
-                                    caption=json_update['message'].get('caption'))
-                elif message_type == 'audio' :
-                    self.data = Audio(audio_id=json_update['message']['audio']['file_id'],
-                                 caption=json_update['message'].get('caption'))
-                elif message_type == 'video' :
-                    self.data = Video(video_id=json_update['message']['video']['file_id'],
-                                 caption=json_update['message'].get('caption'))
-                elif message_type == 'photo':
-                    self.data = Photo(photo_id=json_update['message']['photo'][-1]['file_id'],
-                                 caption=json_update['message'].get('caption'))
-                else:
-                    return None
-            else:
-                return None
-            self.user = User(chat_id=json_update[update_type]['from']['id'],
-                             is_bot=json_update[update_type]['from']['is_bot'])
-            return self
+class Update(ABC):
+    def __init__(self, update_id: int = None, data: Data = None, user: User = None, json_update: dict = None):
+        if not update_id:
+            self.update_id = json_update['update_id']
         else:
-            return None
+            self.update_id = update_id
+        if not data:
+            self.data = self._get_data(json_update)
+        else:
+            self.data = data
+        if not user:
+            self.user = User(chat_id=json_update[list(json_update)[1]]['from']['id'],
+                             is_bot=json_update[list(json_update)[1]]['from']['is_bot'])
+        else:
+            self.user = user
 
-    async def parse_update(self, json_update: dict):
+    @staticmethod
+    @abstractmethod
+    def _get_data(json_update: dict) -> Data:
         pass
 
     def __repr__(self):
         return f'Update({self.update_id}, {self.data}, {self.user})'
+
+
+class CallbackQuery(Update):
+    @staticmethod
+    def _get_data(json_update: dict):
+        message_type = list(json_update['callback_query'])[4]  # photo, document, text, data and so on
+        if message_type == 'data':
+            return Command(json_update['callback_query']['data'])
+
+
+class Message(Update):
+    @staticmethod
+    def _get_data(json_update: dict):
+        message_type = list(json_update['message'])[4]  # photo, document, text and so on
+        if message_type == 'text':
+            command = re.findall('/[a-z]+', json_update['message']['text'])
+            if len(command) == 0:
+                return Text(text=json_update['message']['text'])
+            else:
+                return Command(command=command[0])
+        if message_type == 'document':
+            return Document(document_id=json_update['message']['document']['file_id'],
+                            caption=json_update['message'].get('caption'))
+        elif message_type == 'audio':
+            return Audio(audio_id=json_update['message']['audio']['file_id'],
+                         caption=json_update['message'].get('caption'))
+        elif message_type == 'video':
+            return Video(video_id=json_update['message']['video']['file_id'],
+                         caption=json_update['message'].get('caption'))
+        elif message_type == 'photo':
+            return Photo(photo_id=json_update['message']['photo'][-1]['file_id'],
+                         caption=json_update['message'].get('caption'))
 
 
 class Controller:
@@ -336,13 +343,21 @@ class Controller:
         return self.__supported_update_types
 
     async def handle_update(self, request: object):
-        update = await Update.create(await request.json())
-        print(update)
-        # if await update:
-        #     if not await update.user.is_bot:
-        #         print(await update)
-                # if isinstance(update.data, Command):
-                #     await self.handle_command[update.data.value](update)
+        json_update = await request.json()
+        update_type = list(json_update)[1]  # message or callback_query
+        if update_type == 'callback_query':
+            update = CallbackQuery(json_update=json_update)
+        elif update_type == 'message':
+            update = Message(json_update=json_update)
+        else:
+            update = None
+        if update:
+            print(1) # add command check
+
+            # if not await update.user.is_bot:
+            #     print(await update)
+            #     if isinstance(update.data, Command):
+            #         await self.handle_command[update.data.value](update)
         return web.json_response()  # 200 (OK) response
 
     async def register(self, data: dict):
