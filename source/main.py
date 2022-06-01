@@ -5,7 +5,6 @@ import asyncio
 import aiohttp
 import asyncpg
 from aiohttp import web
-import ast
 import re
 from abc import ABC, abstractmethod
 
@@ -27,21 +26,36 @@ class CustomConfigParser(configparser.ConfigParser):
 
 
 class Database:
-    def __init__(self, host: str, port: int, user: str, password: str, database: str):
-        self.host = host
-        self.port = port
-        self.user = user
-        self.password = password
-        self.database = database
+    def __init__(self,
+                 host: str = None,
+                 port: int = None,
+                 user: str = None,
+                 password: str = None,
+                 database: str = None,
+                 pool: asyncpg.Pool = None,
+                 config: CustomConfigParser = None):
 
-    @property
-    def pool(self) -> object:
-        return self.__pool
-
-    @pool.setter
-    def pool(self, pool: object):
-        if not self.__pool:
-            self.__pool = pool
+        if not host:
+            self.host = config.get('Database', 'host')
+        else:
+            self.host = host
+        if not port:
+            self.port = config.get('Database', 'port')
+        else:
+            self.port = port
+        if not user:
+            self.user = config.get('Database', 'user')
+        else:
+            self.user = user
+        if not password:
+            self.password = config.get('Database', 'password')
+        else:
+            self.password = password
+        if not database:
+            self.database = config.get('Database', 'database')
+        else:
+            self.database = database
+        self.pool = pool
 
     async def create_pool(self):
         try:
@@ -200,6 +214,9 @@ class User:
         self.current_command = current_command
         self.user_id = user_id
 
+    async def find(self):
+        pass
+
     def __repr__(self):
         return f'User(' \
                f'{self.chat_id}, ' \
@@ -297,15 +314,15 @@ class Update(ABC):
 
 class CallbackQuery(Update):
     @staticmethod
-    def _get_data(json_update: dict):
-        message_type = list(json_update['callback_query'])[4]  # photo, document, text, data and so on
+    def _get_data(json_update: dict) -> Data:
+        message_type = list(json_update['callback_query'])[4]
         if message_type == 'data':
             return Command(json_update['callback_query']['data'])
 
 
 class Message(Update):
     @staticmethod
-    def _get_data(json_update: dict):
+    def _get_data(json_update: dict) -> Data:
         message_type = list(json_update['message'])[4]  # photo, document, text and so on
         if message_type == 'text':
             command = re.findall('/[a-z]+', json_update['message']['text'])
@@ -327,20 +344,20 @@ class Message(Update):
                          caption=json_update['message'].get('caption'))
 
 
+class Other(Update):
+    @staticmethod
+    def _get_data(json_update: dict) -> Data:
+        return None
+
+
 class Controller:
-    def __init__(self, config: CustomConfigParser):
-        self.config = config
-        self.__supported_update_types = ast.literal_eval(config.get('Bot', 'supported_update_types'))
+    def __init__(self):
         self.handle_command = {'/start': 123
                                # '/register': self.register,
                                # '/register_scratch': self,
                                # '/alter_user_data': self.view.alter_user_data,
                                # '/navigation': self.navigation
                                }
-
-    @property
-    def supported_update_types(self) -> str:
-        return self.__supported_update_types
 
     async def handle_update(self, request: object):
         json_update = await request.json()
@@ -350,8 +367,11 @@ class Controller:
         elif update_type == 'message':
             update = Message(json_update=json_update)
         else:
-            update = None
-        if update:
+            update = Other(json_update=json_update)
+        if not update.data:     # if data not None (i.e. this update type is supported)
+            if not update.user.is_bot:
+                update.user.find()
+                update.data.save()
             print(1) # add command check
 
             # if not await update.user.is_bot:
@@ -380,64 +400,18 @@ class Controller:
         else:
             await self.view.start(data)
 
-# async def main():
-#     config = CustomConfigParser()
-#     config.read(Path.cwd().parent / 'config.ini')   # path_to_config_file / config_name
-#
-#     postgres_db = Database(config)
-#
-#     bot = Bot(config, postgres_db)
-#     async with aiohttp.ClientSession() as session:
-#         async with session.get(f'{await bot.server_url}bot{await bot.bot_token}/getUpdates') as request:
-#             json_answer = await request.json()
-#             print(json_answer)
-        #         sender, text = await self.parser(await request.json())
-        #         answer = {
-        #             'chat_id': sender,
-        #             'text': 'Выберите пункт меню',
-        #             'reply_markup': {
-        #                 'keyboard': [[{'text': 'First button'}], [{'text': 'Second button'}], [{'text': 'Third button'}]]
-        #             }
-        #         }
-        #         answer2 = {
-        #             'chat_id' : sender,
-        #             'text' : 'Выберите пункт меню',
-        #             'reply_markup' : {
-        #                 'remove_keyboard': True
-        #             }
-        #         }
-        #         answer3 = {
-        #             'chat_id' : sender,
-        #             'text' : 'Выберите пункт меню',
-        #             'reply_markup' : {
-        #                 'inline_keyboard' : [[{'text': 'First button', 'callback_data': 1}],
-        #                                      [{'text': 'Second button', 'callback_data': 2}],
-        #                                      [{'text': 'Third button', 'callback_data': 3}]]
-        #             }
-        #         }
-                # async with session.post(
-                #         f'{await self.server_url}bot{await self.bot_token}/sendMessage', json=answer3) as request:
-                #     json_answer = await request.json()
-                #     print(json_answer)
 
-# async def main():
-#     pass
-
+async def init_app():
+    app = web.Application()
+    app['config'] = CustomConfigParser()
+    app['config'].read(Path.cwd().parent / 'config.ini')  # path_to_config_file / config_name
+    app['database'] = Database(config=app['config'])
+    await app['database'].create_pool()
+    app['controller'] = Controller()
+    app.add_routes([web.post(f'/', app['controller'].handle_update)])
+    return app
 
 if __name__ == '__main__':
-    config = CustomConfigParser()
-    config.read(Path.cwd().parent / 'config.ini')  # path_to_config_file / config_name
-    database = Database(config.get('Database', 'host'),
-                         config.get('Database', 'port'),
-                         config.get('Database', 'user'),
-                         config.get('Database', 'password'),
-                         config.get('Database', 'database')
-                        )
-    controller = Controller(config)
-    app = web.Application()
-
-    app.add_routes([web.post(f'/', controller.handle_update)])
+    loop = asyncio.get_event_loop()
+    app = loop.run_until_complete(init_app())
     web.run_app(app)
-
-# if __name__ == '__main__':
-#     asyncio.run(main())
