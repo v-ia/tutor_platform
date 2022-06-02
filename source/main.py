@@ -1,12 +1,12 @@
 from pathlib import Path
+from aiohttp import web
+from abc import ABC, abstractmethod
 import logging
 import configparser
 import asyncio
 import aiohttp
 import asyncpg
-from aiohttp import web
 import re
-from abc import ABC, abstractmethod
 
 
 def empty_values_check(func):
@@ -57,7 +57,7 @@ class Database:
             self.database = database
         self.pool = pool
 
-    async def create_pool(self):
+    async def create_pool_if_not_exist(self):
         try:
             if not self.pool:
                 self.pool = await asyncpg.create_pool(host=self.host,
@@ -68,25 +68,6 @@ class Database:
                                                       )
         except ConnectionError:
             print('Can\'t create connection\'s pool for database')
-
-    async def get(self, request_mode: str, sql_query: str, *args):
-        await self.create_pool()
-        async with self.pool.acquire() as connection:
-            async with connection.transaction():
-                if request_mode == 'fetch':         # return the results as a list of Record.
-                    result = await connection.fetch(sql_query, *args)
-                elif request_mode == 'fetchrow':    # return the first row
-                    result = await connection.fetchrow(sql_query, *args)
-                elif request_mode == 'fetchval':    # return a value of the specified column of the first record,
-                    result = await connection.fetchval(sql_query, *args)
-                return result
-
-    async def post(self, sql_queries: list, args: list):
-        await self.create_pool()
-        async with self.pool.acquire() as connection:
-            async with connection.transaction():
-                for num, sql in enumerate(sql_queries):
-                    await connection.execute(sql, *args[num])
 
 
 class ViewBot:
@@ -227,18 +208,15 @@ class User:
     def user_id(self):
         return self.__user_id
 
-    async def find(self, database: Database):
-        if await database.get('fetchval', 'SELECT COUNT(*) FROM users WHERE chat_id = $1;', self.chat_id) == 0:
-            await self.register(database)
-            self.__user_id = await database.get('fetchval',
-                                                'SELECT user_id FROM users WHERE chat_id = $1;',
-                                                self.chat_id)
+    async def find(self, connection: asyncpg.connection.Connection):
+        if await connection.fetchval('SELECT COUNT(*) FROM users WHERE chat_id = $1;', self.chat_id) == 0:
+            await self.register(connection)
+            self.__user_id = await connection.fetchval('SELECT user_id FROM users WHERE chat_id = $1;', self.chat_id)
         else:
-            user_info = dict(await database.get('fetchrow',
-                                                'SELECT phone, name, surname, role, current_client, user_id '
-                                                'FROM users '
-                                                'WHERE chat_id = $1;',
-                                                self.chat_id))
+            user_info = dict(await connection.fetchrow('SELECT phone, name, surname, role, current_client, user_id '
+                                                       'FROM users '
+                                                       'WHERE chat_id = $1;',
+                                                       self.chat_id))
             self.__phone = user_info['phone']
             self.__name = user_info['name']
             self.__surname = user_info['surname']
@@ -246,8 +224,8 @@ class User:
             self.__current_client = user_info['current_client']
             self.__user_id = user_info['user_id']
 
-    async def register(self, database: Database):
-        await database.post(['INSERT INTO users (chat_id) VALUES ($1);'], [[self.chat_id]])
+    async def register(self, connection: asyncpg.connection.Connection):
+        await connection.execute('INSERT INTO users (chat_id) VALUES ($1);', self.chat_id)
 
     def __repr__(self):
         return f'User(' \
@@ -263,20 +241,34 @@ class User:
 
 class Data(ABC):
     def __init__(self, value: str):
-        self.value = value
+        self.__value = value
+
+    @property
+    def value(self):
+        return self.__value
+
+    @abstractmethod
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+        pass
 
 
 class Command(Data):
     def __init__(self, command: str):
         super().__init__(command)
 
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+        await connection.execute('INSERT INTO commands (value, user_id) VALUES ($1, $2)', self.value, user_id)
+
     def __repr__(self):
         return f'Command({self.value})'
 
 
 class Text(Data):
-    def __init__(self, text: str) :
+    def __init__(self, text: str):
         super().__init__(text)
+
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+        await connection.execute('INSERT INTO texts (value, user_id) VALUES ($1, $2);', self.value, user_id)
 
     def __repr__(self):
         return f'Text({self.value})'
@@ -285,7 +277,15 @@ class Text(Data):
 class Audio(Data):
     def __init__(self, audio_id: str, caption: str = None):
         super().__init__(audio_id)
-        self.caption = caption
+        self.__caption = caption
+
+    @property
+    def caption(self):
+        return self.__caption
+
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+        await connection.execute('INSERT INTO audios (value, user_id, caption) VALUES ($1, $2, $3);',
+                                 self.value, user_id, self.caption)
 
     def __repr__(self):
         return f'Audio({self.value}, {self.caption})'
@@ -294,7 +294,15 @@ class Audio(Data):
 class Video(Data):
     def __init__(self, video_id: str, caption: str = None):
         super().__init__(video_id)
-        self.caption = caption
+        self.__caption = caption
+
+    @property
+    def caption(self):
+        return self.__caption
+
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+        await connection.execute('INSERT INTO videos (value, user_id, caption) VALUES ($1, $2, $3);',
+                                 self.value, user_id, self.caption)
 
     def __repr__(self):
         return f'Video({self.value}, {self.caption})'
@@ -303,7 +311,15 @@ class Video(Data):
 class Document(Data):
     def __init__(self, document_id: str, caption: str = None):
         super().__init__(document_id)
-        self.caption = caption
+        self.__caption = caption
+
+    @property
+    def caption(self):
+        return self.__caption
+
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+        await connection.execute('INSERT INTO documents (value, user_id, caption) VALUES ($1, $2, $3);',
+                                 self.value, user_id, self.caption)
 
     def __repr__(self):
         return f'Document({self.value}, {self.caption})'
@@ -312,7 +328,15 @@ class Document(Data):
 class Photo(Data):
     def __init__(self, photo_id: str, caption: str = None):
         super().__init__(photo_id)
-        self.caption = caption
+        self.__caption = caption
+
+    @property
+    def caption(self):
+        return self.__caption
+
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+        await connection.execute('INSERT INTO photos (value, user_id, caption) VALUES ($1, $2, $3);',
+                                 self.value, user_id, self.caption)
 
     def __repr__(self):
         return f'Photo({self.value}, {self.caption})'
@@ -321,9 +345,9 @@ class Photo(Data):
 class Update(ABC):
     def __init__(self, update_id: int = None, data: Data = None, user: User = None, json_update: dict = None):
         if not update_id:
-            self.update_id = json_update['update_id']
+            self.__update_id = json_update['update_id']
         else:
-            self.update_id = update_id
+            self.__update_id = update_id
         if not data:
             self.data = self._get_data(json_update)
         else:
@@ -334,10 +358,17 @@ class Update(ABC):
         else:
             self.user = user
 
+    @property
+    def update_id(self):
+        return self.__update_id
+
     @staticmethod
     @abstractmethod
     def _get_data(json_update: dict) -> Data:
         pass
+
+    async def save(self, connection: asyncpg.connection.Connection):
+        await self.data.save(connection, self.user.user_id)
 
     def __repr__(self):
         return f'Update({self.update_id}, {self.data}, {self.user})'
@@ -378,12 +409,11 @@ class Message(Update):
 class Other(Update):
     @staticmethod
     def _get_data(json_update: dict) -> Data:
-        return None
+        pass
 
 
 class Controller:
-    def __init__(self, database: Database):
-        self.database = database
+    def __init__(self):
         self.handle_command = {'/start': 123
                                # '/register': self.register,
                                # '/register_scratch': self,
@@ -391,7 +421,8 @@ class Controller:
                                # '/navigation': self.navigation
                                }
 
-    async def handle_update(self, request: object):
+    @staticmethod
+    async def handle_update(request: object):
         json_update = await request.json()
         update_type = list(json_update)[1]  # message or callback_query
         if update_type == 'callback_query':
@@ -402,9 +433,13 @@ class Controller:
             update = Other(json_update=json_update)
         if update.data:     # if data not None (i.e. this update type is supported)
             if not update.user.is_bot:
-                await update.user.find(self.database)
-                print(update)
-                # update.data.save()
+                await request.app['database'].create_pool_if_not_exist()
+                async with request.app['database'].pool.acquire() as connection:
+                    async with connection.transaction():
+                        await update.user.find(connection)
+                        await update.save(connection)
+                        print(update)
+
             # print(1) # add command check
 
             # if not await update.user.is_bot:
@@ -439,7 +474,7 @@ async def init_app():
     app['config'] = CustomConfigParser()
     app['config'].read(Path.cwd().parent / 'config.ini')  # path_to_config_file / config_name
     app['database'] = Database(config=app['config'])
-    app['controller'] = Controller(app['database'])
+    app['controller'] = Controller()
     app.add_routes([web.post(f'/', app['controller'].handle_update)])
     return app
 
