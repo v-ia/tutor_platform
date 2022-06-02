@@ -59,51 +59,34 @@ class Database:
 
     async def create_pool(self):
         try:
-            self.pool = await asyncpg.create_pool(host=self.host,
-                                                  port=self.port,
-                                                  user=self.user,
-                                                  password=self.password,
-                                                  database=self.database
-                                                  )
+            if not self.pool:
+                self.pool = await asyncpg.create_pool(host=self.host,
+                                                      port=self.port,
+                                                      user=self.user,
+                                                      password=self.password,
+                                                      database=self.database
+                                                      )
         except ConnectionError:
             print('Can\'t create connection\'s pool for database')
 
-    async def get(self, sql: str, *args):
+    async def get(self, request_mode: str, sql_query: str, *args):
         await self.create_pool()
         async with self.pool.acquire() as connection:
             async with connection.transaction():
-                result = await connection.fetchrow(sql, *args)
+                if request_mode == 'fetch':         # return the results as a list of Record.
+                    result = await connection.fetch(sql_query, *args)
+                elif request_mode == 'fetchrow':    # return the first row
+                    result = await connection.fetchrow(sql_query, *args)
+                elif request_mode == 'fetchval':    # return a value of the specified column of the first record,
+                    result = await connection.fetchval(sql_query, *args)
                 return result
 
-    async def post(self, sql: list, values: list):
+    async def post(self, sql_queries: list, args: list):
         await self.create_pool()
         async with self.pool.acquire() as connection:
             async with connection.transaction():
-                for num, sql in enumerate(sql):
-                    await connection.execute(sql, *values[num])
-
-
-class Model:
-    def __init__(self, database: Database):
-        self.database = database
-
-    # check: does user exist in database?
-    async def user_check(self, data: dict):
-        if await self.database.get('SELECT COUNT(*) FROM users WHERE chat_id = $1;', data['chat_id']) == 0:
-            return False
-        else:
-            return dict(await self.database.get('SELECT phone, name, surname, role, current_client FROM users '
-                                           'WHERE chat_id = $1;', data['chat_id']))
-
-    async def start_registration(self, data: dict):
-        user_info = await self.user_check(data)
-        if not user_info:
-            await self.database.post(['INSERT INTO users (id, current_command) VALUES ($1, $2);'],
-                                     [[data['chat_id'], data['value']]])
-        else:
-            await self.database.post(['UPDATE users SET current_command = $1 WHERE chat_id = $2;'],
-                                     [[data['value'], data['chat_id']]])
-        return user_info
+                for num, sql in enumerate(sql_queries):
+                    await connection.execute(sql, *args[num])
 
 
 class ViewBot:
@@ -201,21 +184,70 @@ class User:
                  surname: str = None,
                  role: str = None,
                  current_client: bool = None,
-                 current_command: str = None,
                  user_id: str = None):
         
-        self.chat_id = chat_id
-        self.is_bot = is_bot
-        self.phone = phone
-        self.name = name
-        self.surname = surname
-        self.role = role
-        self.current_client = current_client
-        self.current_command = current_command
-        self.user_id = user_id
+        self.__chat_id = chat_id
+        self.__is_bot = is_bot
+        self.__phone = phone
+        self.__name = name
+        self.__surname = surname
+        self.__role = role
+        self.__current_client = current_client
+        self.__user_id = user_id
 
-    async def find(self):
-        pass
+    @property
+    def chat_id(self):
+        return self.__chat_id
+
+    @property
+    def is_bot(self):
+        return self.__is_bot
+
+    @property
+    def phone(self):
+        return self.__phone
+
+    @property
+    def name(self):
+        return self.__name
+
+    @property
+    def surname(self):
+        return self.__surname
+
+    @property
+    def role(self):
+        return self.__role
+
+    @property
+    def current_client(self):
+        return self.__current_client
+
+    @property
+    def user_id(self):
+        return self.__user_id
+
+    async def find(self, database: Database):
+        if await database.get('fetchval', 'SELECT COUNT(*) FROM users WHERE chat_id = $1;', self.chat_id) == 0:
+            await self.register(database)
+            self.__user_id = await database.get('fetchval',
+                                                'SELECT user_id FROM users WHERE chat_id = $1;',
+                                                self.chat_id)
+        else:
+            user_info = dict(await database.get('fetchrow',
+                                                'SELECT phone, name, surname, role, current_client, user_id '
+                                                'FROM users '
+                                                'WHERE chat_id = $1;',
+                                                self.chat_id))
+            self.__phone = user_info['phone']
+            self.__name = user_info['name']
+            self.__surname = user_info['surname']
+            self.__role = user_info['role']
+            self.__current_client = user_info['current_client']
+            self.__user_id = user_info['user_id']
+
+    async def register(self, database: Database):
+        await database.post(['INSERT INTO users (chat_id) VALUES ($1);'], [[self.chat_id]])
 
     def __repr__(self):
         return f'User(' \
@@ -226,7 +258,6 @@ class User:
                f'{self.surname}, ' \
                f'{self.role}, ' \
                f'{self.current_client}, ' \
-               f'{self.current_command}, ' \
                f'{self.user_id})'
 
 
@@ -351,7 +382,8 @@ class Other(Update):
 
 
 class Controller:
-    def __init__(self):
+    def __init__(self, database: Database):
+        self.database = database
         self.handle_command = {'/start': 123
                                # '/register': self.register,
                                # '/register_scratch': self,
@@ -368,11 +400,12 @@ class Controller:
             update = Message(json_update=json_update)
         else:
             update = Other(json_update=json_update)
-        if not update.data:     # if data not None (i.e. this update type is supported)
+        if update.data:     # if data not None (i.e. this update type is supported)
             if not update.user.is_bot:
-                update.user.find()
-                update.data.save()
-            print(1) # add command check
+                await update.user.find(self.database)
+                print(update)
+                # update.data.save()
+            # print(1) # add command check
 
             # if not await update.user.is_bot:
             #     print(await update)
@@ -406,8 +439,7 @@ async def init_app():
     app['config'] = CustomConfigParser()
     app['config'].read(Path.cwd().parent / 'config.ini')  # path_to_config_file / config_name
     app['database'] = Database(config=app['config'])
-    await app['database'].create_pool()
-    app['controller'] = Controller()
+    app['controller'] = Controller(app['database'])
     app.add_routes([web.post(f'/', app['controller'].handle_update)])
     return app
 
