@@ -36,36 +36,60 @@ class Database:
                  config: CustomConfigParser = None):
 
         if not host:
-            self.host = config.get('Database', 'host')
+            self.__host = config.get('Database', 'host')
         else:
-            self.host = host
+            self.__host = host
         if not port:
-            self.port = config.get('Database', 'port')
+            self.__port = config.get('Database', 'port')
         else:
-            self.port = port
+            self.__port = port
         if not user:
-            self.user = config.get('Database', 'user')
+            self.__user = config.get('Database', 'user')
         else:
-            self.user = user
+            self.__user = user
         if not password:
-            self.password = config.get('Database', 'password')
+            self.__password = config.get('Database', 'password')
         else:
-            self.password = password
+            self.__password = password
         if not database:
-            self.database = config.get('Database', 'database')
+            self.__database = config.get('Database', 'database')
         else:
-            self.database = database
-        self.pool = pool
+            self.__database = database
+        self.__pool = pool
+
+    @property
+    def host(self):
+        return self.__host
+
+    @property
+    def port(self):
+        return self.__port
+
+    @property
+    def user(self):
+        return self.__user
+
+    @property
+    def password(self):
+        return self.__password
+
+    @property
+    def database(self):
+        return self.__database
+
+    @property
+    def pool(self):
+        return self.__pool
 
     async def create_pool_if_not_exist(self):
         try:
             if not self.pool:
-                self.pool = await asyncpg.create_pool(host=self.host,
-                                                      port=self.port,
-                                                      user=self.user,
-                                                      password=self.password,
-                                                      database=self.database
-                                                      )
+                self.__pool = await asyncpg.create_pool(host=self.host,
+                                                        port=self.port,
+                                                        user=self.user,
+                                                        password=self.password,
+                                                        database=self.database
+                                                        )
         except ConnectionError:
             print('Can\'t create connection\'s pool for database')
 
@@ -248,7 +272,7 @@ class Data(ABC):
         return self.__value
 
     @abstractmethod
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
         pass
 
 
@@ -256,8 +280,9 @@ class Command(Data):
     def __init__(self, command: str):
         super().__init__(command)
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
-        await connection.execute('INSERT INTO commands (value, user_id) VALUES ($1, $2)', self.value, user_id)
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+        await connection.execute('INSERT INTO updates (value, user_id, update_id) VALUES ($1, $2, $3);',
+                                 self.value, user_id, update_id)
 
     def __repr__(self):
         return f'Command({self.value})'
@@ -267,8 +292,11 @@ class Text(Data):
     def __init__(self, text: str):
         super().__init__(text)
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
-        await connection.execute('INSERT INTO texts (value, user_id) VALUES ($1, $2);', self.value, user_id)
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+        value_id = await connection.fetchval('INSERT INTO texts (value, user_id) VALUES ($1, $2) RETURNING text_id;',
+                                             self.value, user_id)
+        await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
+                                 '/text', user_id, update_id, value_id)
 
     def __repr__(self):
         return f'Text({self.value})'
@@ -283,9 +311,12 @@ class Audio(Data):
     def caption(self):
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
-        await connection.execute('INSERT INTO audios (value, user_id, caption) VALUES ($1, $2, $3);',
-                                 self.value, user_id, self.caption)
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+        value_id = await connection.fetchval('INSERT INTO audios (value, user_id, caption) '
+                                             'VALUES ($1, $2, $3) RETURNING audio_id;',
+                                             self.value, user_id, self.caption)
+        await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
+                                 '/audio', user_id, update_id, value_id)
 
     def __repr__(self):
         return f'Audio({self.value}, {self.caption})'
@@ -300,9 +331,12 @@ class Video(Data):
     def caption(self):
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
-        await connection.execute('INSERT INTO videos (value, user_id, caption) VALUES ($1, $2, $3);',
-                                 self.value, user_id, self.caption)
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+        value_id = await connection.fetchval('INSERT INTO videos (value, user_id, caption) '
+                                             'VALUES ($1, $2, $3) RETURNING video_id;',
+                                             self.value, user_id, self.caption)
+        await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
+                                 '/video', user_id, update_id, value_id)
 
     def __repr__(self):
         return f'Video({self.value}, {self.caption})'
@@ -317,9 +351,12 @@ class Document(Data):
     def caption(self):
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
-        await connection.execute('INSERT INTO documents (value, user_id, caption) VALUES ($1, $2, $3);',
-                                 self.value, user_id, self.caption)
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+        value_id = await connection.fetchval('INSERT INTO documents (value, user_id, caption) '
+                                             'VALUES ($1, $2, $3) RETURNING document_id;',
+                                             self.value, user_id, self.caption)
+        await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
+                                 '/document', user_id, update_id, value_id)
 
     def __repr__(self):
         return f'Document({self.value}, {self.caption})'
@@ -334,9 +371,12 @@ class Photo(Data):
     def caption(self):
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str):
-        await connection.execute('INSERT INTO photos (value, user_id, caption) VALUES ($1, $2, $3);',
-                                 self.value, user_id, self.caption)
+    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+        value_id = await connection.fetchval('INSERT INTO photos (value, user_id, caption) '
+                                             'VALUES ($1, $2, $3) RETURNING photo_id;',
+                                             self.value, user_id, self.caption)
+        await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
+                                 '/photo', user_id, update_id, value_id)
 
     def __repr__(self):
         return f'Photo({self.value}, {self.caption})'
@@ -362,13 +402,13 @@ class Update(ABC):
     def update_id(self):
         return self.__update_id
 
+    async def exist(self, connection: asyncpg.connection.Connection):
+        return await connection.fetchval('SELECT COUNT(*) FROM updates WHERE update_id = $1;', self.__update_id)
+
     @staticmethod
     @abstractmethod
     def _get_data(json_update: dict) -> Data:
         pass
-
-    async def save(self, connection: asyncpg.connection.Connection):
-        await self.data.save(connection, self.user.user_id)
 
     def __repr__(self):
         return f'Update({self.update_id}, {self.data}, {self.user})'
@@ -436,23 +476,11 @@ class Controller:
                 await request.app['database'].create_pool_if_not_exist()
                 async with request.app['database'].pool.acquire() as connection:
                     async with connection.transaction():
-                        await update.user.find(connection)
-                        await update.save(connection)
-                        print(update)
-
-            # print(1) # add command check
-
-            # if not await update.user.is_bot:
-            #     print(await update)
-            #     if isinstance(update.data, Command):
-            #         await self.handle_command[update.data.value](update)
+                        if not await update.exist(connection):    # repeating update check
+                            await update.user.find(connection)
+                            await update.data.save(connection, update.user.user_id, update.update_id)
+                            print(update)   # Right order of updates (fix table commands)
         return web.json_response()  # 200 (OK) response
-
-    async def register(self, data: dict):
-        user_info = await self.model.start_registration(data)
-        if None not in user_info.values():
-            await self.view.user_is_already_registered(data)
-            await self.view.alter_user_data(data)
 
     async def navigation(self, data: dict):
         user_info = await self.model.user_check(data)
@@ -469,16 +497,11 @@ class Controller:
             await self.view.start(data)
 
 
-async def init_app():
+if __name__ == '__main__':
     app = web.Application()
     app['config'] = CustomConfigParser()
     app['config'].read(Path.cwd().parent / 'config.ini')  # path_to_config_file / config_name
     app['database'] = Database(config=app['config'])
     app['controller'] = Controller()
     app.add_routes([web.post(f'/', app['controller'].handle_update)])
-    return app
-
-if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    app = loop.run_until_complete(init_app())
     web.run_app(app)
