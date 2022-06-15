@@ -1,6 +1,7 @@
 from customconfigparser import CustomConfigParser
 import asyncio
 import aiohttp
+from abc import ABC, abstractmethod
 
 
 class ViewBot:

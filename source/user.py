@@ -57,7 +57,7 @@ class User:
         if await connection.fetchval('SELECT COUNT(*) FROM users WHERE chat_id = $1;', self.chat_id) == 0:
             await self.register(connection)
             self.__user_id = await connection.fetchval('SELECT user_id FROM users WHERE chat_id = $1;', self.chat_id)
-        else :
+        else:
             user_info = dict(await connection.fetchrow('SELECT phone, name, surname, role, current_client, user_id '
                                                        'FROM users '
                                                        'WHERE chat_id = $1;',

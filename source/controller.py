@@ -1,4 +1,5 @@
-from update import Message, CallbackQuery, Other
+import asyncio
+from data import Message, CallbackQuery, Other
 from aiohttp import web
 
 
@@ -29,8 +30,20 @@ class Controller:
                         if not await update.exist(connection):    # repeating update check
                             await update.user.find(connection)
                             await update.data.save(connection, update.user.user_id, update.update_id)
-                            print(update)   # Right order of updates (fix table commands)
+
+                            # task = asyncio.create_task(Controller.test(update))
+                            # request.app['background_tasks'].add(task)
+                            # task.add_done_callback(request.app['background_tasks'].discard)
+
+                            # response = Response()
+                            # await response.send()
+                            # print(update)   # Right order of updates (fix table commands)
         return web.json_response()  # 200 (OK) response
+
+    @staticmethod
+    async def test(update):
+        await asyncio.sleep(10)
+        print(update)  # Right order of updates (fix table commands)
 
     async def navigation(self, data: dict):
         user_info = await self.model.user_check(data)
