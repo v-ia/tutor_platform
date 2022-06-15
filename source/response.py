@@ -1,14 +1,25 @@
 from customconfigparser import CustomConfigParser
+import asyncpg
 import asyncio
 import aiohttp
 from abc import ABC, abstractmethod
 
 
+class Response:
+    def __init__(self, config: CustomConfigParser):
+        self.__response_delay = config.get('Bot', 'response_delay')
+
+    @property
+    def response_delay(self):
+        return self.__response_delay
+
+    async def find_update_without_response(self, connection: asyncpg.connection.Connection):
+        await asyncio.sleep(self.response_delay)
+        await connection.fetchval('SELECT COUNT(*) FROM updates WHERE responded = $1;', 'FALSE')
+
+
 class ViewBot:
     def __init__(self, config: CustomConfigParser):
-        self.__bot_token = config.get('Bot', 'bot_token')
-        self.__server_url = config.get('Bot', 'server_url')
-        self.__request_attempts = config.get('Bot', 'request_attempts')
         self.menu_parent = [[{'text': 'Редактировать мой профиль',
                                 'callback_data': '/alter_user_data'}],
                             [{'text': 'График занятий (отменить/перенести/назначить)',
@@ -32,36 +43,6 @@ class ViewBot:
                              [{'text' : 'Отменить занятие', 'callback_data' : '/alter_user_data'},
                               {'text' : 'Перенести занятие', 'callback_data' : '/alter_user_data'}]
                              ]
-
-    @property
-    def bot_token(self) -> str:
-        return self.__bot_token
-
-    @property
-    def server_url(self) -> str:
-        return self.__server_url
-
-    @property
-    def request_attempts(self) -> int:
-        return int(self.__request_attempts)
-
-    async def _send_method(self, data_type: str, method: str, data: dict):
-        data_to_send = {'chat_id': data['chat_id'],
-                        data_type: data['value']
-                        }
-        if 'caption' in data.keys():
-            data_to_send['caption'] = data['caption']
-        if data.get('reply_markup'):
-            data_to_send['reply_markup'] = data['reply_markup']
-        async with aiohttp.ClientSession() as session:
-            for attempt in range(self.request_attempts):
-                await asyncio.sleep(1 * attempt)
-                async with session.post(f'{self.server_url}bot{self.bot_token}/{method}',
-                                        json=data_to_send
-                                        ) as request:
-                    json_answer = await request.json()
-                    if request.status == 200:
-                        return json_answer['ok']
 
     async def send_menu(self, data: dict, menu: list):
         data['value'] = 'Выберите, что необходимо сделать:'
