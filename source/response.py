@@ -7,19 +7,40 @@ from abc import ABC, abstractmethod
 
 
 class Response:
-    def __init__(self, config: CustomConfigParser, update: Update):
-        self.__response_delay = config.get('Bot', 'response_delay')
+    def __init__(self, config: CustomConfigParser, update: Update, pool: asyncpg.Pool):
+        self.__response_delay = int(config.get('Bot', 'response_delay'))
+        self.__timeout = int(config.get('Bot', 'timeout'))
         self.update = update
-        self.__date
-        self.__value_id
+        self.pool = pool
 
     @property
     def response_delay(self):
         return self.__response_delay
 
-    async def find_update_without_response(self, connection: asyncpg.connection.Connection):
-        await asyncio.sleep(self.response_delay)
-        await connection.fetchval('SELECT COUNT(*) FROM updates WHERE responded = $1;', 'FALSE')
+    @property
+    def timeout(self):
+        return self.__timeout
+
+    async def fix_updates_order(self, connection: asyncpg.connection.Connection):
+        await asyncio.sleep(self.response_delay)    # waiting for next updates
+        updates_count = await self.update.count_updates_no_resp(connection)     # how many updates came in wrong order
+        while updates_count:
+            await asyncio.sleep(self.response_delay)    # waiting for processing previous updates
+            updates_count = await self.update.count_updates_no_resp(connection)  # how many updates came in wrong order
+
+    async def prepare_response(self):
+        async with self.pool.acquire() as connection:
+            try:
+                await asyncio.wait_for(self.fix_updates_order(connection), timeout=self.timeout)  # fixing updates order
+            except asyncio.TimeoutError:
+                pass
+            finally:
+                await self.update.set_updates_responded(connection)  # setting updates answered that wasn't processed
+                await self.update.set_responded(connection)  # set current update responded
+                await self.choose_response()
+
+    async def choose_response(self):
+        print(self.update)
 
 
 class ViewBot:

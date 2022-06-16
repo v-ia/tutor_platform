@@ -178,7 +178,20 @@ class Update(ABC):
         return self.__update_id
 
     async def exist(self, connection: asyncpg.connection.Connection) -> int:
-        return await connection.fetchval('SELECT COUNT(*) FROM updates WHERE update_id = $1;', self.__update_id)
+        return await connection.fetchval('SELECT COUNT(*) FROM updates WHERE update_id = $1;', self.update_id)
+
+    async def count_updates_no_resp(self, connection: asyncpg.connection.Connection) -> int:
+        return await connection.fetchval('SELECT COUNT(*) FROM updates '
+                                         'WHERE responded = $1 AND update_id < $2 AND user_id = $3;',
+                                         False, self.update_id, self.user.user_id)
+
+    async def set_updates_responded(self, connection: asyncpg.connection.Connection):
+        await connection.execute('UPDATE updates SET responded = $1 '
+                                 'WHERE responded = $2 AND update_id < $3 AND user_id = $3;',
+                                 True, False, self.update_id, self.user.user_id)
+
+    async def set_responded(self, connection: asyncpg.connection.Connection):
+        await connection.execute('UPDATE updates SET responded = $1 WHERE update_id = $2;', True, self.update_id)
 
     @staticmethod
     @abstractmethod

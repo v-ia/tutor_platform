@@ -27,14 +27,14 @@ class Controller:
             if not update.user.is_bot:
                 await request.app['database'].create_pool_if_not_exist()
                 async with request.app['database'].pool.acquire() as connection:
-                    async with connection.transaction():
-                        if not await update.exist(connection):    # repeating update check
+                    if not await update.exist(connection):    # repeating update check
+                        async with connection.transaction():
                             await update.user.find(connection)
                             await update.data.save(connection, update.user.user_id, update.update_id)
-                    # async with connection.transaction():
-
-                    #     response = Response(request.app['config'])
-
+                        response = Response(request.app['config'], update, request.app['database'].pool)
+                        task = asyncio.create_task(response.prepare_response())
+                        request.app['background_tasks'].add(task)
+                        task.add_done_callback(request.app['background_tasks'].discard)
                             # keyboard = InlineKeyboardMarkup()
                             # keyboard.add_button(InlineKeyboardButton('Here is button', '/button'))
                             # keyboard.add_button(InlineKeyboardButton('Here is 2 button', '/button2'))
