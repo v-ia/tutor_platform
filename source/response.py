@@ -1,4 +1,5 @@
 from customconfigparser import CustomConfigParser
+from data import Update
 import asyncpg
 import asyncio
 import aiohttp
@@ -6,8 +7,11 @@ from abc import ABC, abstractmethod
 
 
 class Response:
-    def __init__(self, config: CustomConfigParser):
+    def __init__(self, config: CustomConfigParser, update: Update):
         self.__response_delay = config.get('Bot', 'response_delay')
+        self.update = update
+        self.__date
+        self.__value_id
 
     @property
     def response_delay(self):

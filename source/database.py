@@ -35,27 +35,27 @@ class Database:
         self.__pool = pool
 
     @property
-    def host(self):
+    def host(self) -> str:
         return self.__host
 
     @property
-    def port(self):
+    def port(self) -> int:
         return self.__port
 
     @property
-    def user(self):
+    def user(self) -> str:
         return self.__user
 
     @property
-    def password(self):
+    def password(self) -> str:
         return self.__password
 
     @property
-    def database(self):
+    def database(self) -> str:
         return self.__database
 
     @property
-    def pool(self):
+    def pool(self) -> asyncpg.Pool:
         return self.__pool
 
     async def create_pool_if_not_exist(self):

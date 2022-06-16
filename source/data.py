@@ -14,7 +14,7 @@ class Data(ABC):
         self.__value = value
 
     @property
-    def value(self):
+    def value(self) -> str:
         return self.__value
 
     @abstractmethod
@@ -37,100 +37,125 @@ class Command(Data):
 
 
 class Text(Data):
-    def __init__(self, text: str):
+    def __init__(self, text: str, value_id: int = None):
         super().__init__(text)
+        self.__value_id = value_id
+
+    @property
+    def value_id(self) -> int:
+        return self.__value_id
 
     async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
-        value_id = await connection.fetchval('INSERT INTO texts (value, user_id) VALUES ($1, $2) RETURNING text_id;',
-                                             self.value, user_id)
+        self.__value_id = await connection.fetchval('INSERT INTO texts (value) VALUES ($1) RETURNING text_id;',
+                                                    self.value)
         await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
-                                 '/text', user_id, update_id, value_id)
+                                 '/text', user_id, update_id, self.value_id)
 
     def __repr__(self):
-        return f'Text({self.value})'
+        return f'Text({self.value}, {self.value_id})'
 
 
 class Audio(Data):
-    def __init__(self, audio_id: str, caption: str = None):
+    def __init__(self, audio_id: str, caption: str = None, value_id: int = None):
         super().__init__(audio_id)
         self.__caption = caption
+        self.__value_id = value_id
 
     @property
-    def caption(self):
+    def caption(self) -> str:
         return self.__caption
 
+    @property
+    def value_id(self) -> int:
+        return self.__value_id
+
     async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
-        value_id = await connection.fetchval('INSERT INTO audios (value, user_id, caption) '
-                                             'VALUES ($1, $2, $3) RETURNING audio_id;',
-                                             self.value, user_id, self.caption)
+        self.__value_id = await connection.fetchval('INSERT INTO audios (value, caption) '
+                                                    'VALUES ($1, $2) RETURNING audio_id;',
+                                                    self.value, self.caption)
         await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
-                                 '/audio', user_id, update_id, value_id)
+                                 '/audio', user_id, update_id, self.value_id)
 
     def __repr__(self):
-        return f'Audio({self.value}, {self.caption})'
+        return f'Audio({self.value}, {self.caption}, {self.value_id})'
 
 
 class Video(Data):
-    def __init__(self, video_id: str, caption: str = None):
+    def __init__(self, video_id: str, caption: str = None, value_id: int = None):
         super().__init__(video_id)
         self.__caption = caption
+        self.__value_id = value_id
 
     @property
-    def caption(self):
+    def caption(self) -> str:
         return self.__caption
 
+    @property
+    def value_id(self) -> int:
+        return self.__value_id
+
     async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
-        value_id = await connection.fetchval('INSERT INTO videos (value, user_id, caption) '
-                                             'VALUES ($1, $2, $3) RETURNING video_id;',
-                                             self.value, user_id, self.caption)
+        self.__value_id = await connection.fetchval('INSERT INTO videos (value, caption) '
+                                                    'VALUES ($1, $2) RETURNING video_id;',
+                                                    self.value, self.caption)
         await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
-                                 '/video', user_id, update_id, value_id)
+                                 '/video', user_id, update_id, self.value_id)
 
     def __repr__(self):
-        return f'Video({self.value}, {self.caption})'
+        return f'Video({self.value}, {self.caption}, {self.value_id})'
 
 
 class Document(Data):
-    def __init__(self, document_id: str, caption: str = None):
+    def __init__(self, document_id: str, caption: str = None, value_id: int = None):
         super().__init__(document_id)
         self.__caption = caption
+        self.__value_id = value_id
 
     @property
-    def caption(self):
+    def caption(self) -> str:
         return self.__caption
 
+    @property
+    def value_id(self) -> int:
+        return self.__value_id
+
     async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
-        value_id = await connection.fetchval('INSERT INTO documents (value, user_id, caption) '
-                                             'VALUES ($1, $2, $3) RETURNING document_id;',
-                                             self.value, user_id, self.caption)
+        self.__value_id = await connection.fetchval('INSERT INTO documents (value, caption) '
+                                                    'VALUES ($1, $2) RETURNING document_id;',
+                                                    self.value, self.caption)
         await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
-                                 '/document', user_id, update_id, value_id)
+                                 '/document', user_id, update_id, self.value_id)
 
     def __repr__(self):
-        return f'Document({self.value}, {self.caption})'
+        return f'Document({self.value}, {self.caption}, {self.value_id})'
 
 
 class Photo(Data):
-    def __init__(self, photo_id: str, caption: str = None):
+    def __init__(self, photo_id: str, caption: str = None, value_id: int = None):
         super().__init__(photo_id)
         self.__caption = caption
+        self.__value_id = value_id
 
     @property
-    def caption(self):
+    def caption(self) -> str:
         return self.__caption
 
+    @property
+    def value_id(self) -> int:
+        return self.__value_id
+
     async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
-        value_id = await connection.fetchval('INSERT INTO photos (value, user_id, caption) '
-                                             'VALUES ($1, $2, $3) RETURNING photo_id;',
-                                             self.value, user_id, self.caption)
+        self.__value_id = await connection.fetchval('INSERT INTO photos (value, caption) '
+                                                    'VALUES ($1, $2) RETURNING photo_id;',
+                                                    self.value, self.caption)
         await connection.execute('INSERT INTO updates (value, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
-                                 '/photo', user_id, update_id, value_id)
+                                 '/photo', user_id, update_id, self.value_id)
 
     def __repr__(self):
-        return f'Photo({self.value}, {self.caption})'
+        return f'Photo({self.value}, {self.caption}, {self.value_id})'
 
 
-# Update class that comes from Telegram and contains different types of update (Message, CallbackQuery and so on)
+# Update class (interface) that comes from Telegram
 
 class Update(ABC):
     def __init__(self, update_id: int = None, data: Data = None, user: User = None, json_update: dict = None):
@@ -149,10 +174,10 @@ class Update(ABC):
             self.user = user
 
     @property
-    def update_id(self):
+    def update_id(self) -> int:
         return self.__update_id
 
-    async def exist(self, connection: asyncpg.connection.Connection):
+    async def exist(self, connection: asyncpg.connection.Connection) -> int:
         return await connection.fetchval('SELECT COUNT(*) FROM updates WHERE update_id = $1;', self.__update_id)
 
     @staticmethod
@@ -210,14 +235,14 @@ class InlineKeyboardButton:
         self.__callback_data = command
 
     @property
-    def text(self):
+    def text(self) -> str:
         return self.__text
 
     @property
-    def callback_data(self):
+    def callback_data(self) -> str:
         return self.__callback_data
 
-    def dict(self):
+    def dict(self) -> dict:
         return {'text': self.text, 'callback_data': self.callback_data}
 
 
@@ -228,7 +253,7 @@ class ReplyMarkup(ABC):
         pass
 
     @abstractmethod
-    def dict(self):
+    def dict(self) -> dict:
         pass
 
 
@@ -239,7 +264,7 @@ class InlineKeyboardMarkup(ReplyMarkup):
         self.__inline_keyboard = [[]]
 
     @property
-    def inline_keyboard(self):
+    def inline_keyboard(self) -> list:
         return self.__inline_keyboard
 
     def add_button(self, button: InlineKeyboardButton):
@@ -251,7 +276,7 @@ class InlineKeyboardMarkup(ReplyMarkup):
     def add_line(self):
         self.__inline_keyboard.append([])
 
-    def dict(self):
+    def dict(self) -> dict:
         inline_keyboard_dict = []
         for num, line in enumerate(self.__inline_keyboard):
             inline_keyboard_dict.append([])
@@ -294,7 +319,7 @@ class SendData(ABC):
     def request_attempts(self) -> int:
         return int(self.__request_attempts)
 
-    async def send(self):
+    async def send(self) -> int:
         async with aiohttp.ClientSession() as session:
             for attempt in range(self.request_attempts):
                 await asyncio.sleep(1 * attempt)
@@ -305,7 +330,7 @@ class SendData(ABC):
                     if request.status == 200:
                         return json_answer['ok']
 
-    def dict(self):
+    def dict(self) -> dict:
         data_to_send = {'chat_id': self.chat_id, str.lower(self.data.__class__.__name__): self.data.value}
         try:
             data_to_send['caption'] = self.data.caption
@@ -317,7 +342,7 @@ class SendData(ABC):
             return data_to_send
 
 
-# Classes for responses (view for Telegram user)
+# Classes for responses
 
 class SendMessage(SendData):
     def __init__(self, config: CustomConfigParser, chat_id: int, data: Text, reply_markup: ReplyMarkup = None):

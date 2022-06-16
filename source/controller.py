@@ -1,5 +1,6 @@
 import asyncio
-from data import Message, CallbackQuery, Other, SendMessage, Text, Photo, InlineKeyboardButton, InlineKeyboardMarkup, SendPhoto
+from data import Message, CallbackQuery, Update, Other, SendMessage, Text, Photo, InlineKeyboardButton, InlineKeyboardMarkup, SendPhoto
+from response import Response
 from aiohttp import web
 
 
@@ -30,14 +31,17 @@ class Controller:
                         if not await update.exist(connection):    # repeating update check
                             await update.user.find(connection)
                             await update.data.save(connection, update.user.user_id, update.update_id)
+                    # async with connection.transaction():
 
-                            keyboard = InlineKeyboardMarkup()
-                            keyboard.add_button(InlineKeyboardButton('Here is button', '/button'))
-                            keyboard.add_button(InlineKeyboardButton('Here is 2 button', '/button2'))
-                            keyboard.add_line()
-                            keyboard.add_button(InlineKeyboardButton('Here is 3 button', '/button3'))
-                            answer = SendPhoto(request.app['config'], update.user.chat_id, Photo('Hello', 'caption'), keyboard)
-                            print(answer.dict())
+                    #     response = Response(request.app['config'])
+
+                            # keyboard = InlineKeyboardMarkup()
+                            # keyboard.add_button(InlineKeyboardButton('Here is button', '/button'))
+                            # keyboard.add_button(InlineKeyboardButton('Here is 2 button', '/button2'))
+                            # keyboard.add_line()
+                            # keyboard.add_button(InlineKeyboardButton('Here is 3 button', '/button3'))
+                            # answer = SendPhoto(request.app['config'], update.user.chat_id, Photo('Hello', 'caption'), keyboard)
+                            # print(answer.dict())
                             # await answer.send()
 
                             # task = asyncio.create_task(Controller.test(update))
@@ -50,7 +54,7 @@ class Controller:
         return web.json_response()  # 200 (OK) response
 
     @staticmethod
-    async def test(update):
+    async def test(update: Update):
         await asyncio.sleep(10)
         print(update)  # Right order of updates (fix table commands)
 

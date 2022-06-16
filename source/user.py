@@ -22,35 +22,35 @@ class User:
         self.__user_id = user_id
 
     @property
-    def chat_id(self):
+    def chat_id(self) -> int:
         return self.__chat_id
 
     @property
-    def is_bot(self):
+    def is_bot(self) -> bool:
         return self.__is_bot
 
     @property
-    def phone(self):
+    def phone(self) -> str:
         return self.__phone
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self.__name
 
     @property
-    def surname(self):
+    def surname(self) -> str:
         return self.__surname
 
     @property
-    def role(self):
+    def role(self) -> str:
         return self.__role
 
     @property
-    def current_client(self):
+    def current_client(self) -> bool:
         return self.__current_client
 
     @property
-    def user_id(self):
+    def user_id(self) -> str:
         return self.__user_id
 
     async def find(self, connection: asyncpg.connection.Connection):
