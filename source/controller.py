@@ -1,18 +1,11 @@
 import asyncio
-from data import Message, CallbackQuery, Update, Other, SendMessage, Text, Photo, InlineKeyboardButton, InlineKeyboardMarkup, SendPhoto
-from response import Response
+from data import Message, CallbackQuery, Update, Other
+from view import SendMessage, Text, Photo, InlineKeyboardButton, InlineKeyboardMarkup, SendPhoto
+from view import Response
 from aiohttp import web
 
 
 class Controller:
-    def __init__(self):
-        self.handle_command = {'/start': 123
-                               # '/register': self.register,
-                               # '/register_scratch': self,
-                               # '/alter_user_data': self.view.alter_user_data,
-                               # '/navigation': self.navigation
-                               }
-
     @staticmethod
     async def handle_update(request: object):
         json_update = await request.json()
@@ -31,8 +24,9 @@ class Controller:
                         async with connection.transaction():
                             await update.user.find(connection)
                             await update.data.save(connection, update.user.user_id, update.update_id)
-                        response = Response(request.app['config'], update, request.app['database'].pool)
-                        task = asyncio.create_task(response.prepare_response())
+                        # Response for user
+                        response = Response(request, update)
+                        task = asyncio.create_task(response.respond())
                         request.app['background_tasks'].add(task)
                         task.add_done_callback(request.app['background_tasks'].discard)
                             # keyboard = InlineKeyboardMarkup()
@@ -54,20 +48,19 @@ class Controller:
         return web.json_response()  # 200 (OK) response
 
     @staticmethod
-    async def test(update: Update):
-        await asyncio.sleep(10)
-        print(update)  # Right order of updates (fix table commands)
+    async def hello(update):
+        print(update)
 
-    async def navigation(self, data: dict):
-        user_info = await self.model.user_check(data)
-        if user_info:
-            if user_info['role'] == 'student':
-                await self.view.send_menu(data, self.view.menu_student)
-            elif user_info['role'] == 'parent':
-                await self.view.send_menu(data, self.view.menu_parent)
-            elif user_info['role'] == 'tutor':
-                await self.view.send_menu(data, self.view.menu_tutor)
-            else:
-                await self.register(data)
-        else:
-            await self.view.start(data)
+    # async def navigation(self, data: dict):
+    #     user_info = await self.model.user_check(data)
+    #     if user_info:
+    #         if user_info['role'] == 'student':
+    #             await self.view.send_menu(data, self.view.menu_student)
+    #         elif user_info['role'] == 'parent':
+    #             await self.view.send_menu(data, self.view.menu_parent)
+    #         elif user_info['role'] == 'tutor':
+    #             await self.view.send_menu(data, self.view.menu_tutor)
+    #         else:
+    #             await self.register(data)
+    #     else:
+    #         await self.view.start(data)

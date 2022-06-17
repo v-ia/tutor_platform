@@ -72,6 +72,12 @@ class User:
     async def register(self, connection: asyncpg.connection.Connection):
         await connection.execute('INSERT INTO users (chat_id) VALUES ($1);', self.chat_id)
 
+    async def last_command(self, connection: asyncpg.connection.Connection):
+        return await connection.fetchval('SELECT value FROM updates JOIN commands '
+                                         'ON updates.value_id = commands.command_id '
+                                         'WHERE user_id = $1 AND type = $2 ORDER BY update_id DESC LIMIT 1;',
+                                         self.user_id, 'command')
+
     def __repr__(self):
         return f'User(' \
                f'{self.chat_id}, ' \
