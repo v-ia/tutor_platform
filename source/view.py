@@ -143,39 +143,6 @@ class SendDocument(SendData):
         super().__init__(config, chat_id, data, reply_markup)
 
 
-class Response:
-    def __init__(self, request: object, update: Update):
-        self.request = request
-        self.update = update
-        self.pool = request.app['database'].pool
-        self.__response_delay = int(request.app['config'].get('Bot', 'response_delay'))
-        self.__timeout = int(request.app['config'].get('Bot', 'timeout'))
-
-    @property
-    def response_delay(self):
-        return self.__response_delay
-
-    @property
-    def timeout(self):
-        return self.__timeout
-
-    async def respond(self):
-        async with self.pool.acquire() as connection:
-            try:    # fixing updates order
-                await asyncio.wait_for(self.update.fix_order(connection, self.response_delay), timeout=self.timeout)
-            except asyncio.TimeoutError:
-                pass
-            finally:
-                await self.update.set_updates_responded(connection)  # setting updates responded that wasn't processed
-                await self.update.set_responded(connection)  # set current update responded
-                await self.update.respode()
-                last_command = await self.update.user.last_command(connection)
-                if last_command:
-                    await self.request.app['controller'].hello(self.update)
-                else:
-                    pass
-
-
 class ViewBot:
     def __init__(self, config: CustomConfigParser):
         self.menu_parent = [[{'text': 'Редактировать мой профиль',

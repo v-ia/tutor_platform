@@ -1,11 +1,33 @@
 import asyncio
+import asyncpg
 from data import Message, CallbackQuery, Update, Other
 from view import SendMessage, Text, Photo, InlineKeyboardButton, InlineKeyboardMarkup, SendPhoto
-from view import Response
 from aiohttp import web
 
 
 class Controller:
+    command_handlers = {}
+
+    async def start(self):
+        print('start handler')
+
+    @staticmethod
+    async def respond(request: object, update: Update):
+        async with request.app['database'].pool.acquire() as connection:
+            try:    # fixing updates order
+                await asyncio.wait_for(update.fix_order(connection, int(request.app['config'].get('Bot', 'response_delay'))),
+                                       timeout=int(request.app['config'].get('Bot', 'timeout')))
+            except asyncio.TimeoutError:
+                pass
+            finally:
+                await update.set_updates_responded(connection)  # setting updates responded that wasn't processed
+                await update.set_responded(connection)  # set current update responded
+                last_command = await update.user.last_command(connection)
+                if last_command:
+                    await request.app['controller'].command_handlers[last_command]()
+                else:
+                    pass
+
     @staticmethod
     async def handle_update(request: object):
         json_update = await request.json()
@@ -25,8 +47,7 @@ class Controller:
                             await update.user.find(connection)
                             await update.data.save(connection, update.user.user_id, update.update_id)
                         # Response for user
-                        response = Response(request, update)
-                        task = asyncio.create_task(response.respond())
+                        task = asyncio.create_task(Controller.respond(request, update))
                         request.app['background_tasks'].add(task)
                         task.add_done_callback(request.app['background_tasks'].discard)
                             # keyboard = InlineKeyboardMarkup()
@@ -46,10 +67,6 @@ class Controller:
                             # await response.send()
                             # print(update)   # Right order of updates (fix table commands)
         return web.json_response()  # 200 (OK) response
-
-    @staticmethod
-    async def hello(update):
-        print(update)
 
     # async def navigation(self, data: dict):
     #     user_info = await self.model.user_check(data)
