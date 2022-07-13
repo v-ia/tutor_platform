@@ -8,8 +8,23 @@ from aiohttp import web
 class Controller:
     command_handlers = {}
 
-    async def start(self):
-        print('start handler')
+    @staticmethod
+    async def start(request: object, update: Update):
+        keyboard = InlineKeyboardMarkup()
+        if not update.user.role:
+            text = 'Добро пожаловать! :) С помощью бота Вы всегда будете в курсе Вашего расписания, домашних ' \
+                   'заданий, сможете отменять и назначать занятия и многое другое! Для начала нужно пройти ' \
+                   'небольшую регистрацию (требуется лишь 1 раз).'
+            keyboard.add_button(InlineKeyboardButton('Начать регистрацию', '/register'))
+        elif update.user.role == 'parent':
+            pass
+        elif update.user.role == 'parent':
+            pass
+        elif update.user.role == 'parent':
+            pass
+        data_to_send = Text(text)
+        response = SendMessage(request.app['config'], update.user.chat_id, data_to_send, keyboard)
+        await response.send()
 
     @staticmethod
     async def respond(request: object, update: Update):
@@ -23,10 +38,10 @@ class Controller:
                 await update.set_updates_responded(connection)  # setting updates responded that wasn't processed
                 await update.set_responded(connection)  # set current update responded
                 last_command = await update.user.last_command(connection)
-                if last_command:
-                    await request.app['controller'].command_handlers[last_command]()
-                else:
-                    pass
+                try:
+                    await request.app['controller'].command_handlers[last_command](request, update)
+                except KeyError:
+                    await request.app['controller'].command_handlers['/start'](request, update)
 
     @staticmethod
     async def handle_update(request: object):
@@ -50,22 +65,6 @@ class Controller:
                         task = asyncio.create_task(Controller.respond(request, update))
                         request.app['background_tasks'].add(task)
                         task.add_done_callback(request.app['background_tasks'].discard)
-                            # keyboard = InlineKeyboardMarkup()
-                            # keyboard.add_button(InlineKeyboardButton('Here is button', '/button'))
-                            # keyboard.add_button(InlineKeyboardButton('Here is 2 button', '/button2'))
-                            # keyboard.add_line()
-                            # keyboard.add_button(InlineKeyboardButton('Here is 3 button', '/button3'))
-                            # answer = SendPhoto(request.app['config'], update.user.chat_id, Photo('Hello', 'caption'), keyboard)
-                            # print(answer.dict())
-                            # await answer.send()
-
-                            # task = asyncio.create_task(Controller.test(update))
-                            # request.app['background_tasks'].add(task)
-                            # task.add_done_callback(request.app['background_tasks'].discard)
-
-                            # response = Response()
-                            # await response.send()
-                            # print(update)   # Right order of updates (fix table commands)
         return web.json_response()  # 200 (OK) response
 
     # async def navigation(self, data: dict):

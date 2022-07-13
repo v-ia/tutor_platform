@@ -3,7 +3,6 @@ from pathlib import Path
 from database import Database
 from controller import Controller
 from aiohttp import web
-from view import Response
 import logging
 from data import *
 

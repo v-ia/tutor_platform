@@ -88,3 +88,6 @@ class User:
                f'{self.role}, ' \
                f'{self.current_client}, ' \
                f'{self.user_id})'
+
+
+class Parent(User):
