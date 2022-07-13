@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 from customconfigparser import CustomConfigParser
-from user import User
+from user import User, Parent, Tutor, Student
 import asyncpg
 import re
 import asyncio
 import aiohttp
+import uuid
 
 
 # Interface for data types classes
@@ -27,7 +28,7 @@ class Data(ABC):
         self.__value_id = value_id
 
     @abstractmethod
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: uuid.UUID, update_id: int):
         pass
 
 
@@ -37,7 +38,7 @@ class Command(Data):
     def __init__(self, command: str, value_id: int = None):
         super().__init__(command, value_id)
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: uuid.UUID, update_id: int):
         self.value_id = await connection.fetchval('INSERT INTO commands (value) VALUES ($1) RETURNING command_id;',
                                                   self.value)
         await connection.execute('INSERT INTO updates (type, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
@@ -51,7 +52,7 @@ class Text(Data):
     def __init__(self, text: str, value_id: int = None):
         super().__init__(text, value_id)
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: uuid.UUID, update_id: int):
         self.value_id = await connection.fetchval('INSERT INTO texts (value) VALUES ($1) RETURNING text_id;',
                                                   self.value)
         await connection.execute('INSERT INTO updates (type, user_id, update_id, value_id) VALUES ($1, $2, $3, $4);',
@@ -70,7 +71,7 @@ class Audio(Data):
     def caption(self) -> str:
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: uuid.UUID, update_id: int):
         self.value_id = await connection.fetchval('INSERT INTO audios (value, caption) '
                                                   'VALUES ($1, $2) RETURNING audio_id;',
                                                   self.value, self.caption)
@@ -90,7 +91,7 @@ class Video(Data):
     def caption(self) -> str:
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: uuid.UUID, update_id: int):
         self.value_id = await connection.fetchval('INSERT INTO videos (value, caption) '
                                                   'VALUES ($1, $2) RETURNING video_id;',
                                                   self.value, self.caption)
@@ -110,7 +111,7 @@ class Document(Data):
     def caption(self) -> str:
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: uuid.UUID, update_id: int):
         self.value_id = await connection.fetchval('INSERT INTO documents (value, caption) '
                                                   'VALUES ($1, $2) RETURNING document_id;',
                                                   self.value, self.caption)
@@ -130,7 +131,7 @@ class Photo(Data):
     def caption(self) -> str:
         return self.__caption
 
-    async def save(self, connection: asyncpg.connection.Connection, user_id: str, update_id: int):
+    async def save(self, connection: asyncpg.connection.Connection, user_id: uuid.UUID, update_id: int):
         self.value_id = await connection.fetchval('INSERT INTO photos (value, caption) '
                                                   'VALUES ($1, $2) RETURNING photo_id;',
                                                   self.value, self.caption)
@@ -144,20 +145,10 @@ class Photo(Data):
 # Update class (interface) that comes from Telegram
 
 class Update(ABC):
-    def __init__(self, update_id: int = None, data: Data = None, user: User = None, json_update: dict = None):
-        if not update_id:
-            self.__update_id = json_update['update_id']
-        else:
-            self.__update_id = update_id
-        if not data:
-            self.data = self._get_data(json_update)
-        else:
-            self.data = data
-        if not user:
-            self.user = User(chat_id=json_update[list(json_update)[1]]['from']['id'],
-                             is_bot=json_update[list(json_update)[1]]['from']['is_bot'])
-        else:
-            self.user = user
+    def __init__(self, json_update: dict):
+        self.__update_id = json_update['update_id']
+        self.data = self._get_data(json_update)
+        self.user = None
 
     @property
     def update_id(self) -> int:
@@ -185,6 +176,73 @@ class Update(ABC):
         while updates_count:
             await asyncio.sleep(response_delay)    # waiting for processing previous updates
             updates_count = await self.count_updates_no_resp(connection)  # how many updates left in wrong order
+
+    async def find_user(self, json_update: dict, connection: asyncpg.connection.Connection):
+        chat_id = json_update[list(json_update)[1]]['from']['id']
+        is_bot = json_update[list(json_update)[1]]['from']['is_bot']
+        if await connection.fetchval('SELECT COUNT(*) FROM users WHERE chat_id = $1;', chat_id) == 0:
+            self.user = User(chat_id, is_bot)
+            await self.user.register(connection)
+        else:
+            user_info = dict(await connection.fetchrow('SELECT phone, name, surname, role, current_client, user_id '
+                                                       'FROM users '
+                                                       'WHERE chat_id = $1;',
+                                                       chat_id))
+            if user_info['role'] == 'parent':
+                self.user = Parent(chat_id,
+                                   is_bot,
+                                   user_info['phone'],
+                                   user_info['name'],
+                                   user_info['surname'],
+                                   user_info['current_client'],
+                                   user_info['user_id'])
+                await self.user.find_children(connection)
+            elif user_info['role'] == 'tutor':
+                self.user = Tutor(chat_id,
+                                  is_bot,
+                                  user_info['phone'],
+                                  user_info['name'],
+                                  user_info['surname'],
+                                  user_info['current_client'],
+                                  user_info['user_id'])
+            elif user_info['role'] == 'student':
+                self.user = Student(chat_id,
+                                    is_bot,
+                                    user_info['phone'],
+                                    user_info['name'],
+                                    user_info['surname'],
+                                    user_info['current_client'],
+                                    user_info['user_id'])
+            else:
+                self.user = User(chat_id,
+                                 is_bot,
+                                 user_info['phone'],
+                                 user_info['name'],
+                                 user_info['surname'],
+                                 user_info['current_client'],
+                                 user_info['user_id'])
+
+    @staticmethod
+    def _get_data(json_update: dict) -> Data:
+        message_type = list(json_update['message'])[4]  # photo, document, text and so on
+        if message_type == 'text':
+            command = re.findall('/[a-z]+', json_update['message']['text'])
+            if len(command) == 0:
+                return Text(text=json_update['message']['text'])
+            else:
+                return Command(command=command[0])
+        if message_type == 'document':
+            return Document(document_id=json_update['message']['document']['file_id'],
+                            caption=json_update['message'].get('caption'))
+        elif message_type == 'audio':
+            return Audio(audio_id=json_update['message']['audio']['file_id'],
+                         caption=json_update['message'].get('caption'))
+        elif message_type == 'video':
+            return Video(video_id=json_update['message']['video']['file_id'],
+                         caption=json_update['message'].get('caption'))
+        elif message_type == 'photo':
+            return Photo(photo_id=json_update['message']['photo'][-1]['file_id'],
+                         caption=json_update['message'].get('caption'))
 
     @staticmethod
     @abstractmethod

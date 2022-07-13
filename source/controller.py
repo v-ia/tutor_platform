@@ -24,7 +24,7 @@ class Controller:
             pass
         data_to_send = Text(text)
         response = SendMessage(request.app['config'], update.user.chat_id, data_to_send, keyboard)
-        await response.send()
+        # await response.send()
 
     @staticmethod
     async def respond(request: object, update: Update):
@@ -54,17 +54,17 @@ class Controller:
         else:
             update = Other(json_update=json_update)
         if update.data:     # if data not None (i.e. this update type is supported)
-            if not update.user.is_bot:
-                await request.app['database'].create_pool_if_not_exist()
-                async with request.app['database'].pool.acquire() as connection:
-                    if not await update.exist(connection):    # repeating update check
-                        async with connection.transaction():
-                            await update.user.find(connection)
+            await request.app['database'].create_pool_if_not_exist()
+            async with request.app['database'].pool.acquire() as connection:
+                if not await update.exist(connection):    # repeating update check
+                    async with connection.transaction():
+                        await update.find_user(json_update, connection)
+                        if not update.user.is_bot:
                             await update.data.save(connection, update.user.user_id, update.update_id)
-                        # Response for user
-                        task = asyncio.create_task(Controller.respond(request, update))
-                        request.app['background_tasks'].add(task)
-                        task.add_done_callback(request.app['background_tasks'].discard)
+                            # Response for user
+                            task = asyncio.create_task(Controller.respond(request, update))
+                            request.app['background_tasks'].add(task)
+                            task.add_done_callback(request.app['background_tasks'].discard)
         return web.json_response()  # 200 (OK) response
 
     # async def navigation(self, data: dict):
