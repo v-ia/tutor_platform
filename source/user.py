@@ -89,7 +89,6 @@ class Parent(User):
     async def find_children(self, connection: asyncpg.connection.Connection):
         res = await connection.fetch('SELECT child_id FROM families WHERE parent_id = $1;', self.user_id)
         self.__children = [record['child_id'] for record in res]
-        print(self.__children)
 
     def __repr__(self):
         return f'Parent(' \
@@ -99,7 +98,8 @@ class Parent(User):
                f'{self.name}, ' \
                f'{self.surname}, ' \
                f'{self.current_client}, ' \
-               f'{self.user_id})'
+               f'{self.user_id}) ' \
+               f'{self.children})'
 
 
 class Student(User):
@@ -118,6 +118,10 @@ class Student(User):
     def parents(self):
         return self.__parents
 
+    async def find_parents(self, connection: asyncpg.connection.Connection):
+        res = await connection.fetch('SELECT parent_id FROM families WHERE child_id = $1;', self.user_id)
+        self.__parents = [record['parent_id'] for record in res]
+
     def __repr__(self):
         return f'Student(' \
                f'{self.chat_id}, ' \
@@ -126,12 +130,11 @@ class Student(User):
                f'{self.name}, ' \
                f'{self.surname}, ' \
                f'{self.current_client}, ' \
-               f'{self.user_id})'
+               f'{self.user_id}) ' \
+               f'{self.parents})'
 
 
 class Tutor(User):
-    pass
-
     def __repr__(self):
         return f'Tutor(' \
                f'{self.chat_id}, ' \

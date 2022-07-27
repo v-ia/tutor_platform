@@ -5,6 +5,7 @@ from controller import Controller
 from aiohttp import web
 import logging
 from data import *
+import handlers
 
 if __name__ == '__main__':
     app = web.Application()
@@ -13,7 +14,7 @@ if __name__ == '__main__':
     app['database'] = Database(config=app['config'])
     app['background_tasks'] = set()
     app['controller'] = Controller()
-    app['controller'].command_handlers = {'/start': app['controller'].start
-                                          }
-    app.add_routes([web.post(f'/', app['controller'].handle_update)])
+    app['controller'].handler_factories = {'/start': handlers.StartFactory
+                                           }
+    app.add_routes([web.post(f'/', app['controller'].save_update)])
     web.run_app(app)
