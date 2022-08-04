@@ -164,14 +164,14 @@ class TutorHelp(TutorHandler):
 
 
 class HelpFactory(HandlerFactory):
-    def create_tutor_handler(self) -> TutorStart:
+    def create_tutor_handler(self) -> TutorHelp:
         return TutorHelp()
 
-    def create_student_handler(self) -> StudentStart:
+    def create_student_handler(self) -> StudentHelp:
         return StudentHelp()
 
-    def create_parent_handler(self) -> ParentStart:
+    def create_parent_handler(self) -> ParentHelp:
         return ParentHelp()
 
-    def create_user_handler(self) -> UserStart:
+    def create_user_handler(self) -> UserHelp:
         return UserHelp()
