@@ -59,6 +59,9 @@ class User:
                                          'WHERE user_id = $1 AND type = $2 ORDER BY update_id DESC LIMIT 1;',
                                          self.user_id, 'command')
 
+    async def find_relatives(self, connection: asyncpg.connection.Connection):
+        pass
+
     def __repr__(self):
         return f'User(' \
                f'{self.chat_id}, ' \
@@ -86,7 +89,7 @@ class Parent(User):
     def children(self):
         return self.__children
 
-    async def find_children(self, connection: asyncpg.connection.Connection):
+    async def find_relatives(self, connection: asyncpg.connection.Connection):
         res = await connection.fetch('SELECT child_id FROM families WHERE parent_id = $1;', self.user_id)
         self.__children = [record['child_id'] for record in res]
 
@@ -118,7 +121,7 @@ class Student(User):
     def parents(self):
         return self.__parents
 
-    async def find_parents(self, connection: asyncpg.connection.Connection):
+    async def find_relatives(self, connection: asyncpg.connection.Connection):
         res = await connection.fetch('SELECT parent_id FROM families WHERE child_id = $1;', self.user_id)
         self.__parents = [record['parent_id'] for record in res]
 

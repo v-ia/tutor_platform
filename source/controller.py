@@ -54,7 +54,7 @@ class Controller:
                 last_command = await update.user.last_command(connection)
                 handler_factory = request.app['controller'].handler_factories.get(
                     last_command,
-                    request.app['controller'].handler_factories.get('/start')
+                    request.app['controller'].handler_factories.get('/help')
                 )()
                 if handler_factory:
                     if isinstance(update.user, Tutor):

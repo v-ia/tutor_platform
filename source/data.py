@@ -221,6 +221,7 @@ class Update(ABC):
                                  user_info['surname'],
                                  user_info['current_client'],
                                  user_info['user_id'])
+        await self.user.find_relatives(connection)
 
     @staticmethod
     def _get_data(json_update: dict) -> Data:
