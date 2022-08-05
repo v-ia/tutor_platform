@@ -1,29 +1,30 @@
 from abc import ABC, abstractmethod
 import view
 import data
+import asyncpg
 
 
 class UserHandler(ABC):
     @abstractmethod
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         pass
 
 
 class TutorHandler(ABC):
     @abstractmethod
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         pass
 
 
 class ParentHandler(ABC):
     @abstractmethod
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         pass
 
 
 class StudentHandler(ABC):
     @abstractmethod
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         pass
 
 
@@ -45,52 +46,8 @@ class HandlerFactory(ABC):
         pass
 
 
-class UserStart(UserHandler):
-    async def respond(self, request: object, update: data.Update):
-        text = 'Добро пожаловать! :) С помощью бота Вы всегда будете в курсе Вашего расписания, домашних ' \
-               'заданий, сможете отменять и назначать занятия и многое другое! Для начала нужно пройти ' \
-               'небольшую регистрацию (требуется лишь 1 раз).'
-        keyboard = view.InlineKeyboardMarkup()
-        keyboard.add_button(view.InlineKeyboardButton('Начать регистрацию', '/register'))
-        data_to_send = data.Text(text)
-        response = view.SendMessage(request.app['config'], update.user.chat_id, data_to_send, keyboard)
-        await response.send()
-
-
-class StudentStart(StudentHandler):
-    async def respond(self, request: object, update: data.Update):
-        menu = StudentHelp()
-        await menu.respond(request, update)
-
-
-class ParentStart(ParentHandler):
-    async def respond(self, request: object, update: data.Update):
-        menu = ParentHelp()
-        await menu.respond(request, update)
-
-
-class TutorStart(TutorHandler):
-    async def respond(self, request: object, update: data.Update):
-        menu = TutorHelp()
-        await menu.respond(request, update)
-
-
-class StartFactory(HandlerFactory):
-    def create_tutor_handler(self) -> TutorStart:
-        return TutorStart()
-
-    def create_student_handler(self) -> StudentStart:
-        return StudentStart()
-
-    def create_parent_handler(self) -> ParentStart:
-        return ParentStart()
-
-    def create_user_handler(self) -> UserStart:
-        return UserStart()
-
-
 class UserHelp(UserHandler):
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         text = 'Выберите действие:'
         keyboard = view.InlineKeyboardMarkup()
         keyboard.add_button(view.InlineKeyboardButton('Начать регистрацию', '/register'))
@@ -100,7 +57,7 @@ class UserHelp(UserHandler):
 
 
 class StudentHelp(StudentHandler):
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         text = f'{update.user.name}, выберите необходимое действие:'
         keyboard = view.InlineKeyboardMarkup()
         keyboard.add_button(view.InlineKeyboardButton('Отправить домашнее задание', '/send_homework'))
@@ -122,7 +79,7 @@ class StudentHelp(StudentHandler):
 
 
 class ParentHelp(ParentHandler):
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         text = f'{update.user.name}, выберите необходимое действие:'
         keyboard = view.InlineKeyboardMarkup()
         keyboard.add_button(view.InlineKeyboardButton('Оплачены ли занятия?', '/payments'))
@@ -141,7 +98,7 @@ class ParentHelp(ParentHandler):
 
 
 class TutorHelp(TutorHandler):
-    async def respond(self, request: object, update: data.Update):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
         text = f'{update.user.name}, choose an action:'
         keyboard = view.InlineKeyboardMarkup()
         keyboard.add_button(view.InlineKeyboardButton('Send new homework', '/send_homework'))
@@ -175,3 +132,92 @@ class HelpFactory(HandlerFactory):
 
     def create_user_handler(self) -> UserHelp:
         return UserHelp()
+
+
+class UserStart(UserHandler):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
+        text = 'Добро пожаловать! :) С помощью бота ученики всегда будут в курсе расписания, смогут отправлять и ' \
+               'получать домашние задания, а родители – отменять и назначать занятия, следить за оплатой и многое ' \
+               'другое! Для начала нужно пройти небольшую регистрацию (требуется лишь 1 раз). Регистрация доступна ' \
+               'как ученикам, так и их родителям.'
+        keyboard = view.InlineKeyboardMarkup()
+        keyboard.add_button(view.InlineKeyboardButton('Начать регистрацию', '/register'))
+        data_to_send = data.Text(text)
+        response = view.SendMessage(request.app['config'], update.user.chat_id, data_to_send, keyboard)
+        await response.send()
+
+
+class StartFactory(HandlerFactory):
+    def create_tutor_handler(self) -> TutorHelp:
+        return TutorHelp()
+
+    def create_student_handler(self) -> StudentHelp:
+        return StudentHelp()
+
+    def create_parent_handler(self) -> ParentHelp:
+        return ParentHelp()
+
+    def create_user_handler(self) -> UserStart:
+        return UserStart()
+
+
+class UserRegister(UserHandler):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
+        result = await connection.fetch('SELECT value FROM texts JOIN updates ON texts.text_id = updates.value_id '
+                                        'WHERE update_id > (SELECT MAX(update_id) FROM updates '
+                                        'WHERE type = $1 AND user_id = $2 AND responded = $3) '
+                                        'AND type = $4 AND user_id = $5 AND responded = $6 ORDER BY update_id;',
+                                        'command', update.user.user_id, True, 'text', update.user.user_id, True)
+        data_for_profile = [record['value'] for record in result]
+        amount = len(data_for_profile)
+        keyboard = view.InlineKeyboardMarkup()
+        if not data_for_profile:
+            text = 'Регистрация. Шаг 1 из 4. ' \
+                   'Выберите из предложенных вариантов, кем Вы являетесь:'
+            keyboard.add_button(view.InlineKeyboardButton('Родитель', 'parent'))
+            keyboard.add_button(view.InlineKeyboardButton('Ученик', 'student'))
+            keyboard.add_line()
+        elif amount == 1:
+            text = 'Регистрация. Шаг 2 из 4. ' \
+                   'Введите Ваше имя (без фамилии):'
+        elif amount == 2:
+            text = 'Регистрация. Шаг 3 из 4. ' \
+                   'Введите Вашу фамилию:'
+        elif amount == 3:
+            text = 'Регистрация. Шаг 4 из 4. ' \
+                   'Введите Ваш номер телефона без пробелов и тире, начиная с +7 (например, +79219876543):'
+        elif amount == 4:
+            text = 'Регистрация прошла успешно. Дождитесь подтверждения Вашей учетной записи – Вы получите ' \
+                   'уведомление об этом.'
+        else:
+            text = 'В процессе регистрации что-то пошло не так. ' \
+                   'Нажмите кнопку \'Прервать регистрацию\' и попробуйте начать заново.'
+
+        keyboard.add_button(view.InlineKeyboardButton('Прервать регистрацию', '/help'))
+        data_to_send = data.Text(text)
+        response = view.SendMessage(request.app['config'], update.user.chat_id, data_to_send, keyboard)
+        await response.send()
+
+
+class StudentRegister(UserHandler):
+    async def respond(self, request: object, update: data.Update, connection: asyncpg.connection.Connection):
+        text = 'Вы уже прошли ранее регистрацию. Подсказать, какой функционал Вам доступен?'
+        keyboard = view.InlineKeyboardMarkup()
+        keyboard.add_button(view.InlineKeyboardButton('Показать доступные действия', '/help'))
+        data_to_send = data.Text(text)
+        response = view.SendMessage(request.app['config'], update.user.chat_id, data_to_send, keyboard)
+        await response.send()
+
+
+class RegisterFactory(HandlerFactory):
+    def create_tutor_handler(self) -> StudentRegister:
+        return StudentRegister()
+
+    def create_student_handler(self) -> StudentRegister:
+        return StudentRegister()
+
+    def create_parent_handler(self) -> StudentRegister:
+        return StudentRegister()
+
+    def create_user_handler(self) -> UserRegister:
+        return UserRegister()

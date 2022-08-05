@@ -141,14 +141,3 @@ class SendVideo(SendData):
 class SendDocument(SendData):
     def __init__(self, config: CustomConfigParser, chat_id: int, data: Document, reply_markup: ReplyMarkup = None):
         super().__init__(config, chat_id, data, reply_markup)
-
-
-class ViewBot:
-    async def alter_user_data(self, data: dict):
-        data['value'] = 'Если хотите изменить введенные при регистрации данные, то выберите, что именно:'
-        data['reply_markup'] = {
-            'inline_keyboard':  [[{'text': 'Номер телефона', 'callback_data': '/alter_number'},
-                                {'text': 'Тип (родитель/ученик)', 'callback_data': '/alter_role'}],
-                                [{'text': 'Имя', 'callback_data': '/alter_name'},
-                                {'text': 'Фамилия', 'callback_data': '/alter_surname'}]]}
-        await self._send_method('text', 'sendMessage', data)

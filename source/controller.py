@@ -54,15 +54,14 @@ class Controller:
                 last_command = await update.user.last_command(connection)
                 handler_factory = request.app['controller'].handler_factories.get(
                     last_command,
-                    request.app['controller'].handler_factories.get('/help')
-                )()
+                    request.app['controller'].handler_factories.get('/help'))()
                 if handler_factory:
-                    if isinstance(update.user, Tutor):
+                    if isinstance(update.user, Tutor) and update.user.current_client:
                         handler = handler_factory.create_tutor_handler()
-                    elif isinstance(update.user, Student):
+                    elif isinstance(update.user, Student) and update.user.current_client:
                         handler = handler_factory.create_student_handler()
-                    elif isinstance(update.user, Parent):
+                    elif isinstance(update.user, Parent) and update.user.current_client:
                         handler = handler_factory.create_parent_handler()
                     else:
                         handler = handler_factory.create_user_handler()
-                    await handler.respond(request, update)
+                    await handler.respond(request, update, connection)

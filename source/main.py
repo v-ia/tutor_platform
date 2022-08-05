@@ -16,7 +16,7 @@ if __name__ == '__main__':
     app['controller'] = Controller()
     app['controller'].handler_factories = {'/start': handlers.StartFactory,
                                            '/help': handlers.HelpFactory,
-                                           '/register': 0,
+                                           '/register': handlers.RegisterFactory,
                                            '/send_homework': 0,
                                            '/schedule': 0,
                                            '/homework': 0,
