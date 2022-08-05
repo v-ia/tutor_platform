@@ -196,7 +196,7 @@ class Update(ABC):
                                    user_info['surname'],
                                    user_info['current_client'],
                                    user_info['user_id'])
-                await self.user.find_children(connection)
+                await self.user.find_relatives(connection)
             elif user_info['role'] == 'tutor':
                 self.user = Tutor(chat_id,
                                   is_bot,
