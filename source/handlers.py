@@ -169,7 +169,7 @@ class UserRegister(UserHandler):
                                         'AND type = $4 AND user_id = $5 AND responded = $6 ORDER BY update_id;',
                                         'command', update.user.user_id, True, 'text', update.user.user_id, True)
         data_for_profile = [record['value'] for record in result]
-        amount = len(data_for_profile)
+        steps = len(data_for_profile)
         keyboard = view.InlineKeyboardMarkup()
         if not data_for_profile:
             text = 'Регистрация. Шаг 1 из 4. ' \
@@ -177,16 +177,16 @@ class UserRegister(UserHandler):
             keyboard.add_button(view.InlineKeyboardButton('Родитель', 'parent'))
             keyboard.add_button(view.InlineKeyboardButton('Ученик', 'student'))
             keyboard.add_line()
-        elif amount == 1:
+        elif steps == 1:
             text = 'Регистрация. Шаг 2 из 4. ' \
                    'Введите Ваше имя (без фамилии):'
-        elif amount == 2:
+        elif steps == 2:
             text = 'Регистрация. Шаг 3 из 4. ' \
                    'Введите Вашу фамилию:'
-        elif amount == 3:
+        elif steps == 3:
             text = 'Регистрация. Шаг 4 из 4. ' \
                    'Введите Ваш номер телефона без пробелов и тире, начиная с +7 (например, +79219876543):'
-        elif amount == 4:
+        elif steps == 4:
             text = 'Регистрация прошла успешно. Дождитесь подтверждения Вашей учетной записи – Вы получите ' \
                    'уведомление об этом.'
         else:

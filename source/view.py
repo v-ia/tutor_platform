@@ -28,9 +28,6 @@ class InlineKeyboardButton:
 # Interface for keyboard classes
 
 class ReplyMarkup(ABC):
-    def __init__(self):
-        pass
-
     @abstractmethod
     def dict(self) -> dict:
         pass
