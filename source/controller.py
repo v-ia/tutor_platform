@@ -9,10 +9,6 @@ from user import User, Tutor, Parent, Student
 class Controller:
     handler_factories = {}
 
-    @staticmethod
-    async def say_hello(request: object):
-        return web.json_response(text='Hello')  # 200 (OK) response
-
     # Acceptation and saving update data
     @staticmethod
     async def save_update(request: object):
